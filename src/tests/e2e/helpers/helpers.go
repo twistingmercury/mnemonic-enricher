@@ -32,12 +32,6 @@ func NewTestClient(t *testing.T) *TestClient {
 	}
 }
 
-// NewUnauthenticatedClient is an alias for NewTestClient retained for
-// compatibility with existing tests. Cycle 5 will remove it.
-func NewUnauthenticatedClient(t *testing.T) *TestClient {
-	return NewTestClient(t)
-}
-
 // Do executes an HTTP request, setting Content-Type and Accept headers.
 func (c *TestClient) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
