@@ -84,7 +84,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./... && go test ./...`
   - Done: `go build ./...` exits 0; `go test ./...` passes; none of the deleted package paths exist under `src/internal/`
 
-- [ ] **Cycle 3 - Add queue abstraction package**: Create `internal/queue/queue.go` with the provider-agnostic `Delivery` struct and `Subscriber` interface; create the RabbitMQ implementation with reconnect logic; add `github.com/rabbitmq/amqp091-go` to `go.mod`.
+- [x] **Cycle 3 - Add queue abstraction package**: Create `internal/queue/queue.go` with the provider-agnostic `Delivery` struct and `Subscriber` interface; create the RabbitMQ implementation with reconnect logic; add `github.com/rabbitmq/amqp091-go` to `go.mod`.
   - Agent: `go software engineer`
   - Files: `src/internal/queue/queue.go`, `src/internal/queue/rabbitmq/subscriber.go`, `src/internal/queue/rabbitmq/subscriber_test.go`, `src/go.mod`, `src/go.sum`
   - Steps:

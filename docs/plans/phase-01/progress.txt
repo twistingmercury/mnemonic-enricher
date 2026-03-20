@@ -35,3 +35,23 @@ Outcome: All three exited 0; 14 packages built/tested with no errors
 
 Notes: LSP editor diagnostics showed false BrokenImport errors — these are an editor
 tooling issue (LSP pointed at project root, not src/). Actual Go toolchain passed cleanly.
+
+## Cycle 3 - Add queue abstraction package
+Date: 2026-03-20
+Commit: 61f65ee
+Tag: v0.0.1-cycle03
+
+Summary:
+- Created src/internal/queue/queue.go: provider-agnostic Delivery struct and Subscriber interface
+  (imports only "context"; no provider-specific types in signature)
+- Created src/internal/queue/rabbitmq/subscriber.go: amqp091-backed RabbitMQSubscriber with
+  reconnect logic (context-cancellable), QoS prefetch, and amqp091.Delivery → queue.Delivery adaptation
+- Created src/internal/queue/rabbitmq/subscriber_test.go: 9 unit tests covering Name(), Close()
+  nil-safety, Ack/Nack delegation, and interface satisfaction; no live broker required
+- Added github.com/rabbitmq/amqp091-go v1.10.0 to src/go.mod and src/go.sum
+
+Verification: cd src && go test ./internal/queue/... && go vet ./... && go build ./...
+Outcome: All passed; 9/9 tests pass; zero vet errors; build clean
+
+Notes: LSP BrokenImport warnings on new files are editor tooling false-positives (same
+issue as Cycle 2 — LSP pointed at project root, not src/). Go toolchain passed cleanly.
