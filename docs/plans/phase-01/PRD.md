@@ -118,7 +118,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/service/enrichment/...`
   - Done: `go test ./internal/service/enrichment/...` exits 0; `Service` interface exposes `GetJob` and `MarkJobProcessing`
 
-- [ ] **Cycle 6 - Refactor enrichment worker and finalise service interface**: Remove `ClaimNextJob` from the `Service` interface; refactor the enrichment `Worker` to consume from `queue.Subscriber`; update `server.go` to construct the provider-correct subscriber and pass it to the worker.
+- [x] **Cycle 6 - Refactor enrichment worker and finalise service interface**: Remove `ClaimNextJob` from the `Service` interface; refactor the enrichment `Worker` to consume from `queue.Subscriber`; update `server.go` to construct the provider-correct subscriber and pass it to the worker.
   - Agent: `go software engineer`
   - Files: `src/internal/service/enrichment/service.go`, `src/internal/service/enrichment/service_test.go`, `src/internal/enricher/enrichment.go`, `src/internal/enricher/enrichment_test.go`, `src/internal/server/server.go`
   - Steps:

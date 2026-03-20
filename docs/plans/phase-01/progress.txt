@@ -98,3 +98,32 @@ Outcome: All passed; tests pass (cached); zero vet errors; build clean
 
 Notes: LSP BrokenImport errors are editor tooling false-positives (same issue as
 prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.
+
+## Cycle 6 - Refactor enrichment worker and finalise service interface
+Date: 2026-03-20
+Commit: 7bca3ef
+Tag: v0.0.1-cycle06
+
+Summary:
+- Removed ClaimNextJob from the Service interface and its implementation
+- Refactored Worker struct: added sub queue.Subscriber field; updated New constructor
+- Replaced runWorker + sleep polling loop with subscriber-based fan-out in Run:
+  - Calls w.sub.Subscribe(ctx) to get deliveries channel
+  - Uses buffered semaphore of size cfg.WorkerCount to bound concurrency
+  - Each delivery spawns a goroutine calling handleDelivery(drainCtx, d)
+  - On shutdown: drains in-flight via drainInFlight, then calls w.sub.Close()
+- Added handleDelivery: unmarshals {"job_id":"<uuid>"}, calls GetJob, MarkJobProcessing,
+  ProcessJob; Ack on success, Nack(false) on any unrecoverable error
+- Removed sleep method (no longer needed)
+- Kept runMaintenance, doMaintenance, drainInFlight unchanged
+- Updated enrichment_test.go: removed ClaimNextJob from mocks, added mockSubscriber
+  implementing queue.Subscriber with configurable deliveries; rewrote all tests
+- Removed TestClaimNextJob from service_test.go
+- Updated server.go wireDependencies: added switch on cfg.Queue.Provider constructing
+  rabbitmq.NewSubscriber for "rabbitmq"; passes subscriber into enricher.New
+
+Verification: cd src && go vet ./... && go build ./... && go test ./internal/enricher/... ./internal/service/enrichment/...
+Outcome: All passed; zero vet errors; build clean; all tests pass
+
+Notes: LSP BrokenImport errors are editor tooling false-positives (same issue as
+prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.
