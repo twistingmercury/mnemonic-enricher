@@ -51,7 +51,7 @@ e2e_tests(){
     trap cleanup EXIT
 
     printf "Starting infrastructure services...\n"
-    if ! docker compose -f "${E2E_COMPOSE_FILE}" up -d e2e_postgres e2e_neo4j e2e_rabbitmq; then
+    if ! docker compose -f "${E2E_COMPOSE_FILE}" up -d e2e_postgres e2e_neo4j e2e_rabbitmq e2e_openai_stub; then
         printf "ERROR: Failed to start infrastructure services\n" >&2
         return 1
     fi
@@ -60,7 +60,7 @@ e2e_tests(){
         --build \
         --abort-on-container-exit \
         --exit-code-from e2e_tests \
-        e2e_api e2e_tests
+        e2e_enricher e2e_tests
 
     trap - EXIT
     cleanup
