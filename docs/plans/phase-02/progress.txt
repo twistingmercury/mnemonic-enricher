@@ -12,3 +12,13 @@ Summary:
 Verification: cd src && go vet ./... && go test ./internal/config/... ./internal/service/openai/...
 Outcome: PASS (ok internal/config 0.027s, ok internal/service/openai 0.062s)
 Tag: v0.0.1-cycle09-p2cycle01
+
+## Cycle 2 - Build OpenAI stub server
+Date: 2026-03-20
+Summary:
+  - Created src/tests/e2e/openai-stub/go.mod (module github.com/twistingmercury/mnemonic-enricher/tests/e2e/openai-stub, Go 1.21, stdlib only)
+  - Created src/tests/e2e/openai-stub/main.go: HTTP stub on :8090; 401 for missing/empty Authorization; POST /v1/embeddings returns 2000-element [0.1,...] embedding; POST /v1/chat/completions returns canned extraction JSON; POST /control/fail-next sets atomic flag to make next embeddings call return 500
+  - Created src/tests/e2e/openai-stub/Dockerfile: multi-stage build (golang:1.21-alpine builder, alpine:3.19 runtime)
+Verification: docker build -t e2e-openai-stub src/tests/e2e/openai-stub && docker run ... | grep '"object"'
+Outcome: PASS — image built, stub container started, curl returned response containing "object"
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02

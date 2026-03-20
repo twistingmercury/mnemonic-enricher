@@ -65,7 +65,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `cd src && go vet ./... && go test ./internal/config/... ./internal/service/openai/...`
   - Done: Tests exit 0; `OpenAIConfig` has `BaseURL`; both service constructors use it when set
 
-- [ ] **Cycle 2 - Build OpenAI stub server**: Write a standalone Go HTTP stub server that handles `/v1/embeddings`, `/v1/chat/completions`, and `/control/fail-next`; package it as a Docker image.
+- [x] **Cycle 2 - Build OpenAI stub server**: Write a standalone Go HTTP stub server that handles `/v1/embeddings`, `/v1/chat/completions`, and `/control/fail-next`; package it as a Docker image.
   - Agent: `go software engineer`
   - Files: `src/tests/e2e/openai-stub/main.go`, `src/tests/e2e/openai-stub/go.mod`, `src/tests/e2e/openai-stub/Dockerfile`
   - Steps:
