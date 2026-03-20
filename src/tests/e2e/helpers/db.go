@@ -165,6 +165,41 @@ func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout ti
 	return ""
 }
 
+// PollJobStatusRaw polls enrichment_jobs until status is "completed" or "failed"
+// or timeout expires. Returns (status, lastError). Does NOT call t.Fatal on "failed".
+// Calls t.Fatal only on timeout or query error.
+func PollJobStatusRaw(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) (string, string) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		var status string
+		var lastError *string
+
+		err := pool.QueryRow(context.Background(),
+			`SELECT status, last_error FROM enrichment_jobs WHERE id = $1`,
+			jobID,
+		).Scan(&status, &lastError)
+		if err != nil {
+			t.Fatalf("failed to query job status for %s: %v", jobID, err)
+		}
+
+		if status == "completed" || status == "failed" {
+			errMsg := ""
+			if lastError != nil {
+				errMsg = *lastError
+			}
+			return status, errMsg
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
+	return "", ""
+}
+
 // AssertChunkEmbeddingSet asserts that the chunk's embedding column is NOT NULL.
 func AssertChunkEmbeddingSet(t *testing.T, pool *pgxpool.Pool, chunkID uuid.UUID) {
 	t.Helper()

@@ -89,6 +89,28 @@ func AssertConceptNodesExist(t *testing.T, driver neo4j.DriverWithContext, patte
 	}
 }
 
+// AssertPatternNodeNotExists asserts that NO Pattern node with the given ID exists in Neo4j.
+// Calls t.Fatal if a node IS found.
+func AssertPatternNodeNotExists(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
+	t.Helper()
+
+	result, err := neo4j.ExecuteQuery(
+		context.Background(),
+		driver,
+		"MATCH (p:Pattern {id: $id}) RETURN p",
+		map[string]any{"id": patternID.String()},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithReadersRouting(),
+	)
+	if err != nil {
+		t.Fatalf("failed to query pattern node %s: %v", patternID, err)
+	}
+
+	if len(result.Records) != 0 {
+		t.Fatalf("expected no Pattern node with id %s in Neo4j, but one was found", patternID)
+	}
+}
+
 // CleanupPatternGraph deletes the pattern node and all connected concept nodes/edges.
 func CleanupPatternGraph(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
 	t.Helper()
