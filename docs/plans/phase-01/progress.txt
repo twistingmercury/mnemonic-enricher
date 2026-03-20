@@ -77,3 +77,24 @@ Outcome: All passed; zero vet errors; build clean; config tests pass
 
 Notes: LSP BrokenImport and UndeclaredName errors are editor tooling false-positives
 (same issue as prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.
+
+## Cycle 5 - Add GetJob and MarkJobProcessing to enrichment service
+Date: 2026-03-20
+Commit: 69b129a
+Tag: v0.0.1-cycle05
+
+Summary:
+- Added GetJob(ctx, jobID uuid.UUID) (*enrichmentjob.Job, error) to the Service
+  interface and implemented as a delegate to s.jobRepo.Get(ctx, jobID)
+- Added MarkJobProcessing(ctx, jobID uuid.UUID) error to the Service interface
+  and implemented as a delegate to s.jobRepo.MarkProcessing(ctx, jobID)
+- Added TestGetJob and TestMarkJobProcessing to service_test.go (2 subtests each)
+  using existing testify/mock pattern
+- Added GetJob and MarkJobProcessing stubs to mockService/concurrentService in
+  enrichment_test.go (collateral — required for module to compile)
+
+Verification: cd src && go vet ./... && go build ./... && go test ./internal/service/enrichment/...
+Outcome: All passed; tests pass (cached); zero vet errors; build clean
+
+Notes: LSP BrokenImport errors are editor tooling false-positives (same issue as
+prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.

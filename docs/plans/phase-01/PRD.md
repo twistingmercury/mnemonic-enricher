@@ -108,7 +108,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/config/...`
   - Done: `go test ./internal/config/...` exits 0; `MnemonicConfig` has a `Queue QueueConfig` field; `EnrichmentConfig` has no `PollInterval` field
 
-- [ ] **Cycle 5 - Add GetJob and MarkJobProcessing to enrichment service**: Extend the `Service` interface and its implementation with `GetJob` and `MarkJobProcessing`; keep `ClaimNextJob` in place for now (removed in Cycle 6).
+- [x] **Cycle 5 - Add GetJob and MarkJobProcessing to enrichment service**: Extend the `Service` interface and its implementation with `GetJob` and `MarkJobProcessing`; keep `ClaimNextJob` in place for now (removed in Cycle 6).
   - Agent: `go software engineer`
   - Files: `src/internal/service/enrichment/service.go`, `src/internal/service/enrichment/service_test.go`
   - Steps:
