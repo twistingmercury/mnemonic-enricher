@@ -85,7 +85,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `docker compose -f src/tests/docker-compose.yaml config > /dev/null`
   - Done: Compose config parses without error; `e2e_api` service does not appear in config output; `e2e_openai_stub` and enricher `healthcheck` are present
 
-- [ ] **Cycle 4 - Add E2E helper packages and update go.mod**: Add `db.go`, `neo4j.go`, and `amqp.go` to the E2E helpers package; add required Go module dependencies; trim dead auth fields from `helpers.go` and update `apiBaseURL` to use `ENRICHER_URL`.
+- [x] **Cycle 4 - Add E2E helper packages and update go.mod**: Add `db.go`, `neo4j.go`, and `amqp.go` to the E2E helpers package; add required Go module dependencies; trim dead auth fields from `helpers.go` and update `apiBaseURL` to use `ENRICHER_URL`.
   - Agent: `go e2e test engineer`
   - Files: `src/tests/e2e/helpers/db.go`, `src/tests/e2e/helpers/neo4j.go`, `src/tests/e2e/helpers/amqp.go`, `src/tests/e2e/helpers/helpers.go`, `src/tests/e2e/go.mod`, `src/tests/e2e/go.sum`
   - Steps:

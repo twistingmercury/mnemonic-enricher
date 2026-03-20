@@ -38,3 +38,15 @@ Summary:
 Verification: docker compose -f src/tests/docker-compose.yaml config > /dev/null
 Outcome: PASS — config parses without error; e2e_api absent; e2e_openai_stub and enricher healthcheck present
 Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03
+
+## Cycle 4 - Add E2E helper packages and update go.mod
+Date: 2026-03-20
+Summary:
+  - Added github.com/jackc/pgx/v5, github.com/neo4j/neo4j-go-driver/v5, github.com/rabbitmq/amqp091-go to src/tests/e2e/go.mod
+  - Created helpers/db.go: NewPGConn, SeedPattern, SeedChunk, SeedEnrichmentJob, CleanupPattern, PollJobStatus, AssertChunkEmbeddingSet
+  - Created helpers/neo4j.go: NewNeo4jDriver, AssertPatternNodeExists, AssertConceptNodesExist, CleanupPatternGraph
+  - Created helpers/amqp.go: PublishJob
+  - Updated helpers/helpers.go: removed UserID/TeamID/UserRoles/RequestID fields and header-setting code; apiBaseURL() reads ENRICHER_URL; NewUnauthenticatedClient kept as alias for Cycle 5 compatibility
+Verification: cd src/tests/e2e && go build ./...
+Outcome: PASS (exit 0)
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04
