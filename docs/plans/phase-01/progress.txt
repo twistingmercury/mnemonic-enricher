@@ -55,3 +55,25 @@ Outcome: All passed; 9/9 tests pass; zero vet errors; build clean
 
 Notes: LSP BrokenImport warnings on new files are editor tooling false-positives (same
 issue as Cycle 2 — LSP pointed at project root, not src/). Go toolchain passed cleanly.
+
+## Cycle 4 - Add QueueConfig to config
+Date: 2026-03-20
+Commit: c8579cb
+Tag: v0.0.1-cycle04
+
+Summary:
+- Added QueueConfig struct (Provider string) and RabbitMQConfig struct (Host, Port, User,
+  Password, VHost, Queue, PrefetchCount, ReconnectDelay) to config.go
+- Added Queue QueueConfig field to MnemonicConfig
+- Registered all new viper defaults in SetDefaults (queue.provider, queue.rabbitmq.*)
+- Added DefaultQueue* and DefaultRabbitMQ* constants to defaults.go
+- Removed PollInterval field from EnrichmentConfig and its default/validation
+- Updated config_test.go: removed PollInterval assertions, added 8 queue-defaults assertions
+- Fixed dangling PollInterval references in enrichment.go (removed from log + replaced
+  sleep calls with cfg.RetryDelay), enrichment_test.go, service_test.go, telemetry_test.go
+
+Verification: cd src && go vet ./... && go build ./... && go test ./internal/config/...
+Outcome: All passed; zero vet errors; build clean; config tests pass
+
+Notes: LSP BrokenImport and UndeclaredName errors are editor tooling false-positives
+(same issue as prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.

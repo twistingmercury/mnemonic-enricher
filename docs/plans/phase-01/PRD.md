@@ -95,7 +95,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/queue/...`
   - Done: `go test ./internal/queue/...` exits 0; `queue.Subscriber` interface has no amqp091 types in its signature
 
-- [ ] **Cycle 4 - Add QueueConfig to config**: Introduce `QueueConfig` and `RabbitMQConfig` structs in `config.go`; add `Queue QueueConfig` to `MnemonicConfig`; register defaults and viper bindings; remove `EnrichmentConfig.PollInterval`.
+- [x] **Cycle 4 - Add QueueConfig to config**: Introduce `QueueConfig` and `RabbitMQConfig` structs in `config.go`; add `Queue QueueConfig` to `MnemonicConfig`; register defaults and viper bindings; remove `EnrichmentConfig.PollInterval`.
   - Agent: `go software engineer`
   - Files: `src/internal/config/config.go`, `src/internal/config/defaults.go`, `src/internal/config/config_test.go`
   - Steps:
