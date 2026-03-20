@@ -7,44 +7,24 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // apiBaseURL returns the base URL for the API from environment or default.
 func apiBaseURL() string {
-	if url := os.Getenv("API_URL"); url != "" {
+	if url := os.Getenv("ENRICHER_URL"); url != "" {
 		return url
 	}
 	return "http://localhost:8080"
 }
 
-// TestClient wraps an HTTP client with authentication headers and helper methods.
+// TestClient wraps an HTTP client with helper methods for E2E tests.
 type TestClient struct {
 	*http.Client
-	BaseURL   string
-	UserID    string
-	TeamID    string
-	UserRoles string
-	RequestID string
+	BaseURL string
 }
 
-// NewTestClient creates a new test client with default authentication headers.
-// By default, creates a client with admin role for full access.
+// NewTestClient creates a new test client pointed at the enricher API.
 func NewTestClient(t *testing.T) *TestClient {
-	t.Helper()
-	return &TestClient{
-		Client:    &http.Client{Timeout: 10 * time.Second},
-		BaseURL:   apiBaseURL(),
-		UserID:    uuid.New().String(),
-		TeamID:    uuid.New().String(),
-		UserRoles: "admin,developer",
-		RequestID: uuid.New().String(),
-	}
-}
-
-// NewUnauthenticatedClient creates a client without authentication headers.
-func NewUnauthenticatedClient(t *testing.T) *TestClient {
 	t.Helper()
 	return &TestClient{
 		Client:  &http.Client{Timeout: 10 * time.Second},
@@ -52,20 +32,14 @@ func NewUnauthenticatedClient(t *testing.T) *TestClient {
 	}
 }
 
-// Do executes an HTTP request with authentication headers.
+// NewUnauthenticatedClient is an alias for NewTestClient retained for
+// compatibility with existing tests. Cycle 5 will remove it.
+func NewUnauthenticatedClient(t *testing.T) *TestClient {
+	return NewTestClient(t)
+}
+
+// Do executes an HTTP request, setting Content-Type and Accept headers.
 func (c *TestClient) Do(req *http.Request) (*http.Response, error) {
-	if c.UserID != "" {
-		req.Header.Set("X-User-ID", c.UserID)
-	}
-	if c.TeamID != "" {
-		req.Header.Set("X-Team-ID", c.TeamID)
-	}
-	if c.UserRoles != "" {
-		req.Header.Set("X-User-Roles", c.UserRoles)
-	}
-	if c.RequestID != "" {
-		req.Header.Set("X-Request-ID", c.RequestID)
-	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
