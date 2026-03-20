@@ -132,7 +132,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./... && go test ./internal/enricher/... ./internal/service/enrichment/...`
   - Done: `go build ./...` exits 0; enricher package imports no amqp091 types; `Worker` struct has no `cfg.PollInterval` references; tests pass
 
-- [ ] **Cycle 7 - Update docker-compose files and fix CI workflow**: Add RabbitMQ service to both compose files; add `MNEMONIC_QUEUE_*` env vars to enricher service entries; fix the wrong workflow filename in the CI push trigger.
+- [x] **Cycle 7 - Update docker-compose files and fix CI workflow**: Add RabbitMQ service to both compose files; add `MNEMONIC_QUEUE_*` env vars to enricher service entries; fix the wrong workflow filename in the CI push trigger.
   - Agent: `devops engineer`
   - Files: `docker-compose.yaml`, `src/tests/docker-compose.yaml`, `.github/workflows/mnemonic-enrichment-ci.yaml`
   - Steps:

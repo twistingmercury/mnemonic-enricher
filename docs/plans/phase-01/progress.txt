@@ -127,3 +127,26 @@ Outcome: All passed; zero vet errors; build clean; all tests pass
 
 Notes: LSP BrokenImport errors are editor tooling false-positives (same issue as
 prior cycles — LSP pointed at project root, not src/). Go toolchain passed cleanly.
+
+## Cycle 7 - Update docker-compose files and fix CI workflow
+Date: 2026-03-20
+Commit: dd371a6
+Tag: v0.0.1-cycle07
+
+Summary:
+- Added dev_rabbitmq service (rabbitmq:4.0-management, ports 5672/15672, healthcheck
+  via rabbitmq-diagnostics ping) to docker-compose.yaml on dev_network
+- Added dev_enricher service to docker-compose.yaml (mnemonic-enrichment:latest-dev)
+  with all MNEMONIC_QUEUE_* env vars and depends_on dev_rabbitmq
+- Added e2e_rabbitmq service to src/tests/docker-compose.yaml on enrichment_network
+- Updated e2e_enricher with MNEMONIC_QUEUE_* env vars, depends_on e2e_rabbitmq,
+  and added networks: enrichment_network (was missing)
+- Fixed e2e_api.depends_on in e2e compose: changed stale `postgres` reference to
+  `e2e_postgres` (pre-existing bug that would have broken compose validation)
+- Fixed push trigger path in mnemonic-enrichment-ci.yaml:
+  .github/workflows/mnemonic-ci.yaml -> .github/workflows/mnemonic-enrichment-ci.yaml
+
+Verification: docker compose -f docker-compose.yaml config && docker compose -f src/tests/docker-compose.yaml config
+Outcome: Both exited 0 with no errors
+
+Notes: None — clean cycle.
