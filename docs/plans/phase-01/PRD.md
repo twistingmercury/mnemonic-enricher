@@ -142,7 +142,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `docker compose -f docker-compose.yaml config > /dev/null && docker compose -f src/tests/docker-compose.yaml config > /dev/null`
   - Done: both compose files parse without error; each contains a RabbitMQ service; the CI workflow push trigger references the correct filename
 
-- [ ] **Cycle 8 - Cleanup helpers and doc comments**: Remove non-enrichment types from e2e helpers; update package doc comments to reflect reduced scope.
+- [x] **Cycle 8 - Cleanup helpers and doc comments**: Remove non-enrichment types from e2e helpers; update package doc comments to reflect reduced scope.
   - Agent: `go software engineer`
   - Files: `src/tests/e2e/helpers/types.go`, `src/tests/e2e/helpers/helpers.go`, `src/internal/handlers/doc.go`, `src/internal/service/doc.go`, `src/internal/repository/doc.go`
   - Steps:

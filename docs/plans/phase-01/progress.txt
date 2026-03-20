@@ -150,3 +150,32 @@ Verification: docker compose -f docker-compose.yaml config && docker compose -f 
 Outcome: Both exited 0 with no errors
 
 Notes: None — clean cycle.
+
+## Cycle 8 - Cleanup helpers and doc comments
+Date: 2026-03-20
+Commit: caa0674
+Tag: v0.0.1-cycle08
+
+Summary:
+- Trimmed src/tests/e2e/helpers/types.go from 371 lines to 11: kept only
+  VersionResponse (the only type used by operations_test.go); removed all
+  Agent*, Pattern*, Skill*, SkillFile*, HealthResponse, and JSON-RPC/MCP types
+- Trimmed src/tests/e2e/helpers/helpers.go from 336 lines to 113: kept
+  apiBaseURL, TestClient, NewTestClient, NewUnauthenticatedClient, Do, Get,
+  ReadBody, ParseJSON, AssertStatusCode; removed NewReadOnlyTestClient,
+  Post/Put/Delete, AssertContentType, AssertRequestIDHeader, GenerateUniqueName,
+  ExtractSSEData, MCPBaseURL, MCPClient and all its methods, AssertMCPSuccess,
+  AssertMCPError, CreateTestPattern; removed unused bytes and fmt imports
+- Updated src/internal/handlers/doc.go: reflects only the operations sub-package
+  remains; removed references to agents, patterns, skills, skillfiles, stale docs
+- Updated src/internal/service/doc.go: sub-packages list now reads "enrichment,
+  openai"; removed agent, pattern, skill, skillfile, search, MCP references
+- Updated src/internal/repository/doc.go: removed stale docs/design link;
+  updated description to reflect mnemonic-enricher scope
+
+Verification: cd src && go vet ./... && go build ./... && go test ./...
+Outcome: All three exited 0; no errors
+
+Notes: LSP BrokenImport/workspace warnings are editor tooling false-positives
+(same issue as prior cycles — LSP pointed at project root, not src/).
+Go toolchain passed cleanly.
