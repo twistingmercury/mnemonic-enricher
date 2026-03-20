@@ -56,7 +56,7 @@ LABEL org.opencontainers.image.title="mnemonic-enricher" \
     org.opencontainers.image.version="${BUILD_VER}"
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build /out/mnemonic /mnemonic
+COPY --from=build /out/mnemonic-enricher /mnemonic-enricher
 
 EXPOSE 8080
 

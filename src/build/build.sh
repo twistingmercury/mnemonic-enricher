@@ -51,22 +51,16 @@ e2e_tests(){
     trap cleanup EXIT
 
     printf "Starting infrastructure services...\n"
-    if ! docker compose -f "${E2E_COMPOSE_FILE}" up -d postgres neo4j; then
+    if ! docker compose -f "${E2E_COMPOSE_FILE}" up -d e2e_postgres e2e_neo4j e2e_rabbitmq; then
         printf "ERROR: Failed to start infrastructure services\n" >&2
-        return 1
-    fi
-
-    printf "Waiting for infrastructure to be healthy...\n"
-    if ! docker compose -f "${E2E_COMPOSE_FILE}" run --rm migrate; then
-        printf "ERROR: E2E migrations failed\n" >&2
         return 1
     fi
 
     docker compose -f "${E2E_COMPOSE_FILE}" up \
         --build \
         --abort-on-container-exit \
-        --exit-code-from mnemonic_tests \
-        mnemonic_api mnemonic_tests
+        --exit-code-from e2e_tests \
+        e2e_api e2e_tests
 
     trap - EXIT
     cleanup

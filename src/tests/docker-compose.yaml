@@ -17,12 +17,12 @@ services:
   e2e_neo4j:
     image: ghcr.io/twistingmercury/mnemonic-neo4j:v1.0.0-dev
     environment:
-      NEO4J_AUTH: e2e_neo4j/mnemonic_dev
+      NEO4J_AUTH: neo4j/mnemonic_dev
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_dbms_security_procedures_allowlist: apoc.*
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u e2e_neo4j -p mnemonic_dev 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p mnemonic_dev 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

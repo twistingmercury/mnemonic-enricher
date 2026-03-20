@@ -1,78 +1,112 @@
-# Mnemonic
+# mnemonic-enricher
 
-[![Mnemonic CD](https://github.com/twistingmercury/ace/actions/workflows/mnemonic-cd.yaml/badge.svg)](https://github.com/twistingmercury/ace/actions/workflows/mnemonic-cd.yaml)
+[![Build Status](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/ci.yml/badge.svg)](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/ci.yml)
 
-> **Maturity Level**: Emerging - Pivot completed, MCP server and Admin API under development
+> **Maturity Level**: Beta - Stable enrichment worker, RabbitMQ integration operational
 
----
-
-Mnemonic is a team knowledge graph and tooling synchronization service for Claude Code, providing semantic pattern search over curated institutional knowledge and synchronized access to agents, skills, and commands across team members.
+A standalone enrichment worker that processes embedding and knowledge graph synchronization jobs delivered via message queue.
 
 ## Usage
 
-Mnemonic provides two interfaces:
-
-**MCP Server** (read-only, for Claude Code):
-
-```json
-// Claude Code invokes via MCP
-{
-  "tool": "search_patterns",
-  "arguments": {
-    "query": "Go error handling patterns"
-  }
-}
-// Returns: Ranked patterns with similarity scores
-```
-
-**Admin REST API** (for data management):
+`mnemonic-enricher` subscribes to a message queue, processes enrichment jobs (embeddings via OpenAI + graph synchronization to Neo4j), and exposes only health and version endpoints:
 
 ```bash
-# Store a new pattern
-curl -X POST http://localhost:8080/v1/api/patterns \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "go-error-wrapping",
-    "description": "Pattern for wrapping errors with context",
-    "content": "Use fmt.Errorf with %w for error chains...",
-    "tags": ["go", "error-handling"],
-    "agent_associations": [{"agent_name": "go-software-engineer", "relevance": 0.9}]
-  }'
+# Health check
+curl http://localhost:8080/health
 
-# Search patterns semantically
-curl -X GET "http://localhost:8080/v1/api/patterns/search?q=error+handling&limit=5"
+# Version information
+curl http://localhost:8080/version
 ```
 
-See the [API Specification](docs/openapi/mnemonic-v1.yaml)
-for complete endpoint documentation.
+Start the service with Docker Compose:
+
+```bash
+docker compose up
+```
 
 ## How it works
 
-Mnemonic provides two core capabilities:
+### Queue-driven architecture
 
-**Team knowledge graph**: Curated engineering patterns, guidelines, and institutional knowledge stored in a knowledge graph (Postgres + PGVector + Neo4j). Relevant patterns are retrieved using semantic search and graph traversal, providing agents with project-specific context. Patterns are enriched automatically with embeddings and concept extraction to enable semantic search via the MCP `search_patterns` tool.
+The worker subscribes to a configurable message queue (default: RabbitMQ) for enrichment job delivery. The queue abstraction (`queue.Subscriber` interface in `internal/queue/queue.go`) permits swapping queue providers without changing worker logic.
 
-**Tooling synchronization**: Team-wide agents, skills, and commands are stored in Mnemonic and synchronized to team members via the Admin REST API. This ensures consistent Claude Code configurations across the team, eliminating "works on my machine" issues and enabling rapid onboarding.
+**Current provider:** RabbitMQ (`internal/queue/rabbitmq/`)
 
-**Dual protocol architecture**: Read-only MCP server (port 8081) for Claude Code integration, separate Admin REST API (port 8080) for data management. Both interfaces run in a single server process backed by Postgres and Neo4j.
+**Adding a new provider:** Create a new package under `internal/queue/<provider>/` implementing the `Subscriber` interface, then add a case in the server's provider switch.
 
-### Architectural Pivot
+### Enrichment pipeline
 
-Mnemonic originally focused on deterministic agent routing but pivoted in February 2026 to focus on team knowledge and tooling sync (see [2026-02-14-mnemonic-pivot-knowledge-sync.md](docs/plans/2026-02-14-mnemonic-pivot-knowledge-sync.md)). The user is the orchestrator in spec-based development; Mnemonic provides memory and tools, not routing decisions.
+For each job:
 
-### Phased Approach
+1. **Embedding**: Call OpenAI API to generate vector embeddings
+2. **Graph sync**: Store embeddings and synchronize relationships to Neo4j
 
-- **Phase 1** (Current): Local deployment with MCP server, Admin API, and pattern enrichment
-- **Phase 2** (Future): Production deployment with authentication, rate limiting, and multi-region support
+Patterns are enriched with vector embeddings to enable semantic search in downstream consumers.
+
+## Configuration
+
+Configure the worker via environment variables. All values have sensible defaults.
+
+### Queue Provider
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_QUEUE_PROVIDER` | `rabbitmq` | Queue provider (e.g., `rabbitmq`) |
+
+### RabbitMQ
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_QUEUE_RABBITMQ_HOST` | `localhost` | RabbitMQ host |
+| `MNEMONIC_QUEUE_RABBITMQ_PORT` | `5672` | RabbitMQ port |
+| `MNEMONIC_QUEUE_RABBITMQ_USER` | `guest` | RabbitMQ username |
+| `MNEMONIC_QUEUE_RABBITMQ_PASSWORD` | `guest` | RabbitMQ password |
+| `MNEMONIC_QUEUE_RABBITMQ_VHOST` | `/` | RabbitMQ virtual host |
+| `MNEMONIC_QUEUE_RABBITMQ_QUEUE` | `enrichment-jobs` | Queue name |
+| `MNEMONIC_QUEUE_RABBITMQ_PREFETCH_COUNT` | `5` | Prefetch count per worker |
+| `MNEMONIC_QUEUE_RABBITMQ_RECONNECT_DELAY` | `5s` | Reconnection delay |
+
+### Database: PostgreSQL
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_DATABASE_POSTGRES_HOST` | `localhost` | PostgreSQL host |
+| `MNEMONIC_DATABASE_POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `MNEMONIC_DATABASE_POSTGRES_DATABASE` | `mnemonic` | Database name |
+| `MNEMONIC_DATABASE_POSTGRES_USERNAME` | `postgres` | Username |
+| `MNEMONIC_DATABASE_POSTGRES_PASSWORD` | `postgres` | Password |
+
+### Database: Neo4j
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_DATABASE_NEO4J_URI` | `neo4j://localhost:7687` | Neo4j connection URI |
+| `MNEMONIC_DATABASE_NEO4J_USERNAME` | `neo4j` | Username |
+| `MNEMONIC_DATABASE_NEO4J_PASSWORD` | `neo4j` | Password |
+| `MNEMONIC_DATABASE_NEO4J_DATABASE` | `neo4j` | Database name |
+
+### OpenAI
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_OPENAI_API_KEY` | (required) | OpenAI API key |
+| `MNEMONIC_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `MNEMONIC_OPENAI_EXTRACTION_MODEL` | `gpt-4o-mini` | Extraction model for concept analysis |
+
+### Enrichment Worker
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MNEMONIC_ENRICHMENT_WORKER_COUNT` | `4` | Number of concurrent enrichment workers |
+| `MNEMONIC_ENRICHMENT_JOB_TIMEOUT` | `30s` | Job processing timeout |
+| `MNEMONIC_ENRICHMENT_MAX_ATTEMPTS` | `3` | Retry attempts per job |
 
 ## Key Considerations
 
-- **Pivot completed**: Routing engine removed, focus shifted to knowledge graph and tooling sync (February 2026)
-- **Current state**: Repository layer with vector similarity search functional, MCP server and Admin API endpoints in development, pattern enrichment pipeline planned
-- **MVP scope**: Local deployment via Docker Compose, single-user trusted environment, no authentication
-- **MCP integration**: Claude Code connects via MCP protocol on port 8081 for read-only pattern search
-- **Admin API**: Data management (patterns, agents, skills, commands) via REST on port 8080
-- **Post-MVP features**: Multi-user authentication, production deployment, rate limiting, remote access
+- **No HTTP API handlers**: This is a worker service. Only `/health` and `/version` are exposed for operational use.
+- **Queue abstraction**: Swap queue providers by implementing the `Subscriber` interface and configuring the provider name.
+- **Database dependency**: PostgreSQL stores patterns and their metadata; Neo4j stores the enriched knowledge graph.
+- **OpenAI API cost**: Each pattern embedding incurs an OpenAI API cost. Consider batch processing and rate limiting for large datasets.
 
 ## Development Considerations
 
@@ -82,44 +116,71 @@ Clone and build:
 
 ```bash
 git clone https://github.com/twistingmercury/mnemonic-enricher.git
-cd mnemonic/src/mnemonic
-./build/build.sh
+cd mnemonic-enricher
+make build
 ```
 
-Requires Go 1.25+, Docker 27+, and Docker Compose 2.32+
+Requires:
+- Go 1.21+
+- Docker 27+
+- Docker Compose 2.32+
+
 ([Go installation](https://go.dev/doc/install),
 [Docker installation](https://docs.docker.com/get-docker/))
 
 ### Building & running
 
-Build and test Mnemonic:
+Build locally and run unit + integration + E2E tests:
 
 ```bash
-cd src/mnemonic
-./build/build.sh
+make build
 ```
 
-The build script runs unit tests, integration tests (with PostgreSQL in
-Docker), and builds the Docker image.
+The `make build` target invokes the full CI build script (`src/build/build.sh`), which:
+- Runs unit tests
+- Runs integration tests (PostgreSQL and Neo4j via Docker)
+- Builds the Docker image
+- Runs E2E tests
+
+For development, use `make local` to build a binary without Docker:
+
+```bash
+make local
+```
+
+This runs only the Go build step (no tests, no Docker image).
 
 ### Testing
 
 Run unit tests:
 
 ```bash
-cd src/mnemonic
-go test ./...
+make tests-unit
 ```
 
-Run integration tests (requires Docker):
+Run graph repository integration tests (PostgreSQL + Neo4j required):
 
 ```bash
-cd src/mnemonic/internal/repository/tests
-./run-agent-integration-tests.sh
-./run-pattern-integration-tests.sh
+make tests-db-graph
 ```
 
-The build script runs both unit and integration tests automatically.
+Run benchmarks:
+
+```bash
+make tests-bench
+```
+
+### Linting and code quality
+
+```bash
+make analyze
+```
+
+This runs:
+- `goimports` code formatting
+- `golangci-lint` linting
+- `govulncheck` vulnerability scanning
+- `gosec` security scanning
 
 ### Versioning
 
@@ -131,34 +192,4 @@ Version is determined from git tags:
 git describe --tags --always
 ```
 
-No releases published yet. See [CHANGELOG.md](CHANGELOG.md) for
-development progress.
-
-## Documentation
-
-### Background
-
-- [Project Blog](https://twistingmercury.github.io) - Development
-  journey, design rationale, and updates
-
-### Architecture
-
-- [Architecture Overview](docs/architecture/00-overview.md) - System
-  model, phased approach, key principles
-- [Requirements](docs/architecture/01-requirements.md) - Problem
-  statement and success criteria
-- [Architectural Decisions](docs/architecture/02-architectural-decisions.md) -
-  Major decisions with rationale
-- [System Architecture](docs/architecture/03-system-architecture.md) -
-  Component breakdown and data flow
-
-### Design
-
-- [Pivot API Specification](docs/design/2026-02-15-pivot-api-specification.md) -
-  REST Admin API + MCP Server specification (post-pivot)
-- [Pattern Processing](docs/design/pattern-processing.md) -
-  Pattern enrichment and search pipeline
-- [Observability Implementation](docs/design/observability-implementation.md) -
-  Metrics, tracing, and logging design
-- [Configuration](docs/design/configuration.md) -
-  Server configuration reference
+See [CHANGELOG.md](CHANGELOG.md) for release history.
