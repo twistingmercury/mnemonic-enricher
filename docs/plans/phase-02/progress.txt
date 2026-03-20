@@ -1,0 +1,14 @@
+## Cycle 1 - Add MNEMONIC_OPENAI_BASE_URL to config and service constructors
+Date: 2026-03-20
+Summary:
+  - Added `DefaultOpenAIBaseURL = "https://api.openai.com/v1"` to defaults.go
+  - Added `BaseURL string` field to OpenAIConfig struct in config.go
+  - Added `v.SetDefault("openai.base_url", DefaultOpenAIBaseURL)` in SetDefaults
+  - Added URL validation in OpenAIConfig.validate() (validates when non-empty)
+  - Updated NewEmbeddingService to use cfg.BaseURL when non-empty, else embeddingsEndpoint
+  - Updated NewExtractionService to use cfg.BaseURL when non-empty, else chatCompletionsEndpoint
+  - Added DefaultOpenAIBaseURL default assertion to TestDefaultValues
+  - Added TestOpenAIBaseURL_EnvOverride and TestOpenAIBaseURL_ValidateAcceptsValidURL tests
+Verification: cd src && go vet ./... && go test ./internal/config/... ./internal/service/openai/...
+Outcome: PASS (ok internal/config 0.027s, ok internal/service/openai 0.062s)
+Tag: v0.0.1-cycle09-p2cycle01

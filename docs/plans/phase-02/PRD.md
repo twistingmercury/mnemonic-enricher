@@ -52,7 +52,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
 
 ## Implementation Plan
 
-- [ ] **Cycle 1 - Add MNEMONIC_OPENAI_BASE_URL to config and service constructors**: Add `BaseURL string` to `OpenAIConfig`; register `MNEMONIC_OPENAI_BASE_URL` env var with default `https://api.openai.com/v1`; update `NewEmbeddingService` and `NewExtractionService` to use `cfg.BaseURL` when non-empty, otherwise fall back to their hardcoded endpoint constants.
+- [x] **Cycle 1 - Add MNEMONIC_OPENAI_BASE_URL to config and service constructors**: Add `BaseURL string` to `OpenAIConfig`; register `MNEMONIC_OPENAI_BASE_URL` env var with default `https://api.openai.com/v1`; update `NewEmbeddingService` and `NewExtractionService` to use `cfg.BaseURL` when non-empty, otherwise fall back to their hardcoded endpoint constants.
   - Agent: `go software engineer`
   - Files: `src/internal/config/config.go`, `src/internal/config/defaults.go`, `src/internal/config/config_test.go`, `src/internal/service/openai/embedding.go`, `src/internal/service/openai/extraction.go`
   - Steps:
