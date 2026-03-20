@@ -12,7 +12,7 @@ on:
       - "src/go.sum"
       - "src/build/**"
       - "src/tests/**"
-      - ".github/workflows/mnemonic-ci.yaml"
+      - ".github/workflows/mnemonic-enrichment-ci.yaml"
   pull_request:
     branches:
       - main

@@ -43,11 +43,21 @@ services:
     depends_on:
       e2e_neo4j:
         condition: service_healthy
-      postgres:
+      e2e_postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/mnemonic-api", "--health"]
       interval: 2s
+      timeout: 5s
+      retries: 5
+    networks:
+      - enrichment_network
+
+  e2e_rabbitmq:
+    image: rabbitmq:4.0-management
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
       timeout: 5s
       retries: 5
     networks:
@@ -64,6 +74,16 @@ services:
       MNEMONIC_DATABASE_NEO4J_PASSWORD: mnemonic_dev
       MNEMONIC_OPENAI_API_KEY: sk-test-dummy
       MNEMONIC_LOGGING_LEVEL: debug
+      MNEMONIC_QUEUE_PROVIDER: rabbitmq
+      MNEMONIC_QUEUE_RABBITMQ_HOST: e2e_rabbitmq
+      MNEMONIC_QUEUE_RABBITMQ_USER: guest
+      MNEMONIC_QUEUE_RABBITMQ_PASSWORD: guest
+      MNEMONIC_QUEUE_RABBITMQ_QUEUE: enrichment-jobs
+    depends_on:
+      e2e_rabbitmq:
+        condition: service_healthy
+    networks:
+      - enrichment_network
 
   e2e_tests:
     build:
