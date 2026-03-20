@@ -50,3 +50,15 @@ Summary:
 Verification: cd src/tests/e2e && go build ./...
 Outcome: PASS (exit 0)
 Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04
+
+## Cycle 5 - Retarget and clean up operational tests
+Date: 2026-03-20
+Summary:
+  - Deleted TestSwaggerUI_ReturnsOK from operations_test.go
+  - Deleted TestHealthCheck_UnhealthyReturns503 from operations_test.go
+  - Replaced all NewUnauthenticatedClient calls with NewTestClient (TestHealthCheck_NoAuthRequired, TestVersion_NoAuthRequired)
+  - Removed NewUnauthenticatedClient alias from helpers/helpers.go
+  - Confirmed metricsBaseURL() already reads METRICS_URL env var — no change needed
+Verification: cd src/tests/e2e && go build ./... && ! grep -rq "TestSwaggerUI\|TestHealthCheck_Unhealthy" src/tests/e2e/
+Outcome: PASS — go build exit 0; neither deleted test name found in src/tests/e2e/
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04-p2cycle05

@@ -97,7 +97,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `cd src/tests/e2e && go build ./...`
   - Done: `go build ./...` exits 0; all three new helper files compile cleanly
 
-- [ ] **Cycle 5 - Retarget and clean up operational tests**: Remove dead tests from `operations_test.go`; retarget remaining tests to the enricher.
+- [x] **Cycle 5 - Retarget and clean up operational tests**: Remove dead tests from `operations_test.go`; retarget remaining tests to the enricher.
   - Agent: `go e2e test engineer`
   - Files: `src/tests/e2e/api/operations_test.go`
   - Steps:
