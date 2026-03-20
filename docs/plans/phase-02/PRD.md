@@ -138,6 +138,19 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `make build`
   - Done: `make build` exits 0; `CHANGELOG.md` contains a `[0.2.0]` entry
 
+- [ ] **Cycle 9 - Code review and fix critical/high/medium issues**: Run a full code review across all phase-02 changes; fix every critical, high, and medium finding; verify the build is clean after fixes.
+  - Agent: `code reviewer`
+  - Files: all files created or modified in Cycles 1–8
+  - Steps:
+    - Run `git diff main...HEAD --name-only` to enumerate every file changed in this phase
+    - Review all changed files against Go conventions, the approved design spec (`docs/superpowers/specs/2026-03-20-e2e-test-fix-design.md`), and general correctness; classify each finding as critical, high, medium, or low
+    - Fix every critical, high, and medium finding in place; leave low findings as comments in the progress log
+    - Run `cd src && go vet ./... && go test ./internal/config/... ./internal/service/openai/...` to confirm main module is clean
+    - Run `cd src/tests/e2e && go vet ./... && go build ./...` to confirm E2E module is clean
+    - Run `make build` to confirm the full pipeline still passes after fixes
+  - Verify: `cd src && go vet ./... && go build ./... && cd ../tests/e2e && go vet ./... && go build ./...`
+  - Done: Both `go vet` and `go build` commands exit 0; no unfixed critical, high, or medium findings remain; `make build` exits 0
+
 ## Risks and Mitigations
 
 - Risk: The enricher healthcheck (`--health` flag) is not wired into the binary, causing `service_healthy` in compose to never resolve.
@@ -163,3 +176,4 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
 - A chunk-based enrichment job published to RabbitMQ produces `status = completed`, a non-null chunk embedding, a Neo4j Pattern node, and at least one Neo4j Concept node with a `MENTIONED_IN` edge
 - A malformed message and a missing job ID are handled gracefully (enricher stays healthy)
 - An OpenAI failure produces `status = failed` with `last_error` set and no spurious Neo4j nodes
+- No unfixed critical, high, or medium code review findings remain across phase-02 changes
