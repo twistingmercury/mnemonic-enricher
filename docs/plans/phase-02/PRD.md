@@ -117,7 +117,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `cd src/tests/e2e && go build ./pipeline/...`
   - Done: `go build ./pipeline/...` exits 0
 
-- [ ] **Cycle 7 - Write pipeline unhappy path tests**: Add three unhappy path tests covering malformed messages, missing job IDs, and OpenAI failures.
+- [x] **Cycle 7 - Write pipeline unhappy path tests**: Add three unhappy path tests covering malformed messages, missing job IDs, and OpenAI failures.
   - Agent: `go e2e test engineer`
   - Files: `src/tests/e2e/pipeline/enrichment_test.go`
   - Steps:

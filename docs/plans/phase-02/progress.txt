@@ -76,3 +76,16 @@ Summary:
 Verification: cd src/tests/e2e && go build ./pipeline/...
 Outcome: PASS (exit 0)
 Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04-p2cycle05-p2cycle06
+
+## Cycle 7 - Write pipeline unhappy path tests
+Date: 2026-03-20
+Summary:
+  - Added PublishRaw(t, body []byte) to helpers/amqp.go for publishing arbitrary bytes to the enrichment queue
+  - Added AssertPatternNodeNotExists to helpers/neo4j.go (asserts zero Pattern nodes for a given ID)
+  - Added PollJobStatusRaw to helpers/db.go — non-fataling variant returning (status, lastError); used when "failed" is the expected outcome
+  - Added TestEnrichmentPipeline_MalformedMessage: publishes "not-json" raw bytes, sleeps 2s, asserts enricher /health returns 200
+  - Added TestEnrichmentPipeline_JobNotFound: publishes a valid JSON message with a random UUID not in the DB, sleeps 2s, asserts enricher /health returns 200
+  - Added TestEnrichmentPipeline_OpenAIFailure: arms stub /control/fail-next, seeds pattern+chunk+job, publishes job, polls for status="failed" (30s), asserts last_error non-empty, asserts no Pattern node written to Neo4j
+Verification: cd src/tests/e2e && go build ./pipeline/...
+Outcome: PASS (exit 0)
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04-p2cycle05-p2cycle06-p2cycle07
