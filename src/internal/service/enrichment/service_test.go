@@ -657,42 +657,6 @@ func TestMarkJobProcessing(t *testing.T) {
 	})
 }
 
-// ---------- ClaimNextJob ----------
-
-func TestClaimNextJob(t *testing.T) {
-	t.Parallel()
-
-	t.Run("happy path returns claimed job", func(t *testing.T) {
-		t.Parallel()
-
-		svc, deps := newTestService(t)
-		job := testJob()
-		deps.jobRepo.On("ClaimPending", mock.Anything).Return(job, nil)
-
-		result, err := svc.ClaimNextJob(context.Background())
-
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, testJobID, result.ID)
-		require.NotNil(t, result.PatternID)
-		assert.Equal(t, testPatternID, *result.PatternID)
-		assertExpectations(t, deps)
-	})
-
-	t.Run("no jobs available returns nil nil", func(t *testing.T) {
-		t.Parallel()
-
-		svc, deps := newTestService(t)
-		deps.jobRepo.On("ClaimPending", mock.Anything).Return(nil, nil)
-
-		result, err := svc.ClaimNextJob(context.Background())
-
-		require.NoError(t, err)
-		assert.Nil(t, result)
-		assertExpectations(t, deps)
-	})
-}
-
 // ---------- ProcessJob (pattern-level) ----------
 
 func TestProcessJob_HappyPath(t *testing.T) {

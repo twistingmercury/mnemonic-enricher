@@ -2,13 +2,16 @@ package enricher
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
-	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 )
 
@@ -16,32 +19,39 @@ import (
 // Maintenance reclaims stale jobs and cleans up old completed/failed jobs.
 const defaultMaintenanceInterval = 5 * time.Minute
 
-// Worker polls for pending enrichment jobs and processes them using
-// the EnrichmentService. It runs a configurable number of concurrent claim-process
-// goroutines plus a single maintenance goroutine.
+// jobMessage is the JSON payload delivered by the queue for each enrichment job.
+type jobMessage struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+// Worker consumes enrichment job messages from a queue.Subscriber and processes
+// them using the EnrichmentService. A configurable semaphore bounds concurrent
+// job goroutines, and a single maintenance goroutine handles periodic cleanup.
 type Worker struct {
 	svc    enrichmentsvc.Service
+	sub    queue.Subscriber
 	cfg    config.EnrichmentConfig
 	logger zerolog.Logger
 }
 
-// New creates a Worker that processes enrichment jobs using svc, configured by
-// cfg. The logger is used for structured logging of worker lifecycle events and
-// errors.
-func New(svc enrichmentsvc.Service, cfg config.EnrichmentConfig, logger zerolog.Logger) *Worker {
+// New creates a Worker that processes enrichment jobs using svc, consuming
+// messages from sub, configured by cfg. The logger is used for structured
+// logging of worker lifecycle events and errors.
+func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentConfig, logger zerolog.Logger) *Worker {
 	return &Worker{
 		svc:    svc,
+		sub:    sub,
 		cfg:    cfg,
 		logger: logger.With().Str("component", "enrichment_worker").Logger(),
 	}
 }
 
-// Run starts the worker pool and blocks until ctx is cancelled. It launches
-// cfg.WorkerCount claim-process goroutines plus one maintenance goroutine.
+// Run subscribes to the queue and fans out deliveries to bounded goroutines.
+// It blocks until ctx is cancelled.
 //
 // On shutdown (ctx cancellation), Run performs a two-phase graceful drain:
-//  1. Stop claiming new jobs (workers exit their claim loops).
-//  2. Wait for in-flight ProcessJob calls to complete, up to cfg.DrainTimeout.
+//  1. Stop consuming new deliveries (the subscriber stops emitting when ctx is cancelled).
+//  2. Wait for in-flight handleDelivery calls to complete, up to cfg.DrainTimeout.
 //
 // If the drain timeout expires, in-flight job contexts are cancelled and Run
 // returns. Run always returns nil on shutdown; worker goroutines never crash
@@ -53,21 +63,20 @@ func (w *Worker) Run(ctx context.Context) error {
 	drainCtx, drainCancel := context.WithCancel(context.Background())
 	defer drainCancel()
 
-	// inflight tracks the number of currently executing ProcessJob calls
+	// inflight tracks the number of currently executing handleDelivery calls
 	// so Run can wait for them during the drain phase.
 	var inflight sync.WaitGroup
 
-	// allDone tracks all goroutines (workers + maintenance) so Run can wait
-	// for everything to finish before returning.
+	// allDone tracks all goroutines (delivery handlers + maintenance) so Run
+	// can wait for everything to finish before returning.
 	var allDone sync.WaitGroup
 
-	for i := range w.cfg.WorkerCount {
-		workerID := i
-		allDone.Add(1)
-		go func() {
-			defer allDone.Done()
-			w.runWorker(ctx, drainCtx, workerID, &inflight)
-		}()
+	// semaphore limits the number of concurrently executing delivery handlers.
+	semaphore := make(chan struct{}, w.cfg.WorkerCount)
+
+	deliveries, err := w.sub.Subscribe(ctx)
+	if err != nil {
+		return fmt.Errorf("enrichment worker: subscribe: %w", err)
 	}
 
 	allDone.Add(1)
@@ -79,29 +88,116 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.logger.Info().
 		Int("worker_count", w.cfg.WorkerCount).
 		Dur("drain_timeout", w.cfg.DrainTimeout).
+		Str("queue", w.sub.Name()).
 		Msg("enrichment worker started")
 
-	// Block until the parent context is cancelled (shutdown signal).
-	<-ctx.Done()
+	// Fan-out: for each delivery, acquire a semaphore slot and process in a
+	// goroutine. The loop exits when the deliveries channel is closed (which
+	// happens when ctx is cancelled by the subscriber implementation).
+	for d := range deliveries {
+		d := d // capture loop variable
+		semaphore <- struct{}{}
+		inflight.Add(1)
+		allDone.Add(1)
+		go func() {
+			defer func() {
+				<-semaphore
+				inflight.Done()
+				allDone.Done()
+			}()
+			w.handleDelivery(drainCtx, d)
+		}()
+	}
 
-	// Drain phase: wait for in-flight ProcessJob calls to complete, bounded
-	// by the drain timeout. Worker goroutines will stop claiming new jobs
-	// (because ctx is cancelled) and will exit after their current
-	// ProcessJob call finishes.
+	// Drain phase: wait for in-flight handleDelivery calls to complete, bounded
+	// by the drain timeout.
 	w.logger.Info().
 		Dur("drain_timeout", w.cfg.DrainTimeout).
 		Msg("draining in-flight jobs")
 
 	w.drainInFlight(&inflight, drainCancel)
 
-	// Wait for all goroutines to exit cleanly after drain completes.
+	if err := w.sub.Close(); err != nil {
+		w.logger.Error().Err(err).Msg("error closing subscriber")
+	}
+
+	// Wait for all goroutines (maintenance + delivery handlers) to exit.
 	allDone.Wait()
 
 	w.logger.Info().Msg("enrichment worker stopped")
 	return nil
 }
 
-// drainInFlight waits for all in-flight ProcessJob calls tracked by wg to
+// handleDelivery unmarshals a queue delivery, looks up the job, marks it as
+// processing, and runs the enrichment pipeline. It calls d.Ack on success and
+// d.Nack(false) on unrecoverable errors (parse failures, lookup failures,
+// state-transition failures). drainCtx remains live through the drain phase so
+// that in-flight work can complete gracefully after the main ctx is cancelled.
+func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
+	log := w.logger
+
+	// Parse the job message.
+	var msg jobMessage
+	if err := json.Unmarshal(d.Body, &msg); err != nil {
+		log.Error().Err(err).Msg("failed to parse delivery body; nacking")
+		if nackErr := d.Nack(false); nackErr != nil {
+			log.Error().Err(nackErr).Msg("nack failed after parse error")
+		}
+		return
+	}
+
+	jobID := msg.JobID
+	log = log.With().Str("job_id", jobID.String()).Logger()
+
+	// Look up the job.
+	job, err := w.svc.GetJob(drainCtx, jobID)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get job; nacking")
+		if nackErr := d.Nack(false); nackErr != nil {
+			log.Error().Err(nackErr).Msg("nack failed after GetJob error")
+		}
+		return
+	}
+
+	// Mark the job as processing.
+	if err := w.svc.MarkJobProcessing(drainCtx, jobID); err != nil {
+		log.Error().Err(err).Msg("failed to mark job processing; nacking")
+		if nackErr := d.Nack(false); nackErr != nil {
+			log.Error().Err(nackErr).Msg("nack failed after MarkJobProcessing error")
+		}
+		return
+	}
+
+	logEvent := log.Info()
+	if job.PatternID != nil {
+		logEvent = logEvent.Str("pattern_id", job.PatternID.String())
+	}
+	if job.ChunkID != nil {
+		logEvent = logEvent.Str("chunk_id", job.ChunkID.String())
+	}
+	logEvent.Msg("processing enrichment job")
+
+	// Run the enrichment pipeline.
+	if err := w.svc.ProcessJob(drainCtx, job); err != nil {
+		// Non-nil error from ProcessJob means the failure could not be
+		// recorded (unrecoverable). Log at error level but still ack so we
+		// don't requeue a job stuck in an unrecoverable state.
+		log.Error().
+			Err(err).
+			Msg("enrichment job failed with unrecoverable error")
+		if nackErr := d.Nack(false); nackErr != nil {
+			log.Error().Err(nackErr).Msg("nack failed after ProcessJob error")
+		}
+		return
+	}
+
+	log.Info().Msg("enrichment job completed")
+	if ackErr := d.Ack(); ackErr != nil {
+		log.Error().Err(ackErr).Msg("ack failed after successful processing")
+	}
+}
+
+// drainInFlight waits for all in-flight handleDelivery calls tracked by wg to
 // complete. If they do not finish within cfg.DrainTimeout, drainCancel is
 // called to cancel the drain context, forcing in-flight calls to abort.
 func (w *Worker) drainInFlight(wg *sync.WaitGroup, drainCancel context.CancelFunc) {
@@ -121,79 +217,6 @@ func (w *Worker) drainInFlight(wg *sync.WaitGroup, drainCancel context.CancelFun
 		drainCancel()
 		// Wait for goroutines to finish after cancellation.
 		<-done
-	}
-}
-
-// runWorker is the claim-process loop for a single worker goroutine. It
-// repeatedly claims and processes jobs until claimCtx is cancelled.
-//
-// When claimCtx is cancelled, the worker stops claiming new jobs. Any
-// in-flight ProcessJob call uses drainCtx, which remains live during the
-// drain phase so that the job can finish its work gracefully. The inflight
-// WaitGroup tracks active ProcessJob calls for the drain phase.
-func (w *Worker) runWorker(claimCtx, drainCtx context.Context, id int, inflight *sync.WaitGroup) {
-	log := w.logger.With().Int("worker_id", id).Logger()
-	log.Debug().Msg("worker goroutine started")
-
-	for {
-		select {
-		case <-claimCtx.Done():
-			log.Debug().Msg("worker goroutine stopping (no longer claiming jobs)")
-			return
-		default:
-		}
-
-		job, err := w.svc.ClaimNextJob(claimCtx)
-		if err != nil {
-			// Check for context cancellation to avoid noisy logging on shutdown.
-			if claimCtx.Err() != nil {
-				return
-			}
-			log.Error().Err(err).Msg("failed to claim job")
-			w.sleep(claimCtx, w.cfg.RetryDelay)
-			continue
-		}
-
-		if job == nil {
-			// No pending jobs; sleep before polling again.
-			w.sleep(claimCtx, w.cfg.RetryDelay)
-			continue
-		}
-
-		logEvent := log.Info().Str("job_id", job.ID.String())
-		if job.PatternID != nil {
-			logEvent = logEvent.Str("pattern_id", job.PatternID.String())
-		}
-		if job.ChunkID != nil {
-			logEvent = logEvent.Str("chunk_id", job.ChunkID.String())
-		}
-		logEvent.Msg("processing enrichment job")
-
-		// Track the in-flight job for graceful drain. Use drainCtx for the
-		// ProcessJob call so that in-flight work can complete even after
-		// claimCtx is cancelled.
-		inflight.Add(1)
-		w.processJob(drainCtx, job, log)
-		inflight.Done()
-	}
-}
-
-// processJob runs the enrichment pipeline for a single job and logs the
-// outcome. It uses the provided context, which during normal operation is the
-// drain context (not the claim context) so that in-flight jobs can complete
-// during shutdown.
-func (w *Worker) processJob(ctx context.Context, job *enrichmentjob.Job, log zerolog.Logger) {
-	if err := w.svc.ProcessJob(ctx, job); err != nil {
-		// Non-nil error from ProcessJob means the failure could not be
-		// recorded (unrecoverable). Log at error level.
-		log.Error().
-			Err(err).
-			Str("job_id", job.ID.String()).
-			Msg("enrichment job failed with unrecoverable error")
-	} else {
-		log.Info().
-			Str("job_id", job.ID.String()).
-			Msg("enrichment job completed")
 	}
 }
 
@@ -243,17 +266,5 @@ func (w *Worker) doMaintenance(ctx context.Context, log zerolog.Logger) {
 		log.Error().Err(err).Msg("failed to cleanup failed jobs")
 	} else if failedCleaned > 0 {
 		log.Info().Int64("count", failedCleaned).Msg("cleaned up failed jobs")
-	}
-}
-
-// sleep blocks for the given duration or until ctx is cancelled, whichever
-// comes first.
-func (w *Worker) sleep(ctx context.Context, d time.Duration) {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-	case <-timer.C:
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/operations"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
+	rabbitmq "github.com/twistingmercury/mnemonic-enricher/internal/queue/rabbitmq"
 	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjobrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
@@ -185,10 +186,27 @@ func wireDependencies(
 		return nil, fmt.Errorf("wire enrichment service: %w", err)
 	}
 
-	// Enrichment worker.
-	enrichWorker := enricher.New(enrichmentSvc, cfg.Enrichment, logger)
-
-	return enrichWorker, nil
+	// Queue subscriber.
+	switch cfg.Queue.Provider {
+	case "rabbitmq":
+		rmqCfg := rabbitmq.RabbitMQConfig{
+			Host:           cfg.Queue.RabbitMQ.Host,
+			Port:           cfg.Queue.RabbitMQ.Port,
+			User:           cfg.Queue.RabbitMQ.User,
+			Password:       cfg.Queue.RabbitMQ.Password,
+			VHost:          cfg.Queue.RabbitMQ.VHost,
+			Queue:          cfg.Queue.RabbitMQ.Queue,
+			PrefetchCount:  cfg.Queue.RabbitMQ.PrefetchCount,
+			ReconnectDelay: cfg.Queue.RabbitMQ.ReconnectDelay,
+		}
+		rmqSub, subErr := rabbitmq.NewSubscriber(rmqCfg)
+		if subErr != nil {
+			return nil, fmt.Errorf("wire queue subscriber: %w", subErr)
+		}
+		return enricher.New(enrichmentSvc, rmqSub, cfg.Enrichment, logger), nil
+	default:
+		return nil, fmt.Errorf("unknown queue provider: %q", cfg.Queue.Provider)
+	}
 }
 
 // runHTTPServer starts the admin API HTTP server and gracefully shuts it down

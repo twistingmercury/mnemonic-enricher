@@ -43,10 +43,6 @@ type Service interface {
 	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
 	MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error
 
-	// ClaimNextJob atomically claims the next pending enrichment job.
-	// Returns (nil, nil) if no jobs are available.
-	ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error)
-
 	// ProcessJob runs the full enrichment pipeline for a claimed job:
 	//   1. Load pattern from Postgres
 	//   2. Generate embedding via EmbeddingService
@@ -143,12 +139,6 @@ func (s *enrichmentService) GetJob(ctx context.Context, jobID uuid.UUID) (*enric
 // MarkJobProcessing transitions a job to the processing state.
 func (s *enrichmentService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
 	return s.jobRepo.MarkProcessing(ctx, jobID)
-}
-
-// ClaimNextJob atomically claims the next pending enrichment job.
-// Returns (nil, nil) if no jobs are available.
-func (s *enrichmentService) ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error) {
-	return s.jobRepo.ClaimPending(ctx)
 }
 
 // ProcessJob dispatches to the chunk-based or pattern-based pipeline based on

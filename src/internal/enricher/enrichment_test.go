@@ -2,6 +2,7 @@ package enricher_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -16,23 +17,37 @@ import (
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
+	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
 	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 )
 
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
 // concurrentService is a hand-written mock for tests that need dynamic return
-// values (e.g., returning different jobs from a shared queue). This avoids
-// testify/mock's limitations with functional Return values and error types.
+// values. GetJob and ProcessJob are set via function fields.
 type concurrentService struct {
-	claimFunc   func(ctx context.Context) (*enrichmentjob.Job, error)
-	processFunc func(ctx context.Context, job *enrichmentjob.Job) error
+	getJobFunc   func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
+	processFunc  func(ctx context.Context, job *enrichmentjob.Job) error
 }
 
-func (s *concurrentService) ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error) {
-	return s.claimFunc(ctx)
+func (s *concurrentService) GetJob(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+	if s.getJobFunc != nil {
+		return s.getJobFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+func (s *concurrentService) MarkJobProcessing(_ context.Context, _ uuid.UUID) error {
+	return nil
 }
 
 func (s *concurrentService) ProcessJob(ctx context.Context, job *enrichmentjob.Job) error {
-	return s.processFunc(ctx, job)
+	if s.processFunc != nil {
+		return s.processFunc(ctx, job)
+	}
+	return nil
 }
 
 func (s *concurrentService) ReclaimStaleJobs(_ context.Context) (int64, error) {
@@ -47,23 +62,19 @@ func (s *concurrentService) CleanupFailedJobs(_ context.Context) (int64, error) 
 	return 0, nil
 }
 
-func (s *concurrentService) GetJob(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
-	return nil, nil
-}
-
-func (s *concurrentService) MarkJobProcessing(_ context.Context, _ uuid.UUID) error {
-	return nil
-}
-
-// mockService implements enrichmentsvc.Service for testing.
+// mockService implements enrichmentsvc.Service for testing via testify/mock.
 type mockService struct {
 	mock.Mock
 }
 
-func (m *mockService) ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error) {
-	args := m.Called(ctx)
+func (m *mockService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
+	args := m.Called(ctx, jobID)
 	job, _ := args.Get(0).(*enrichmentjob.Job)
 	return job, args.Error(1)
+}
+
+func (m *mockService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
+	return m.Called(ctx, jobID).Error(0)
 }
 
 func (m *mockService) ProcessJob(ctx context.Context, job *enrichmentjob.Job) error {
@@ -86,15 +97,55 @@ func (m *mockService) CleanupFailedJobs(ctx context.Context) (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *mockService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
-	args := m.Called(ctx, jobID)
-	job, _ := args.Get(0).(*enrichmentjob.Job)
-	return job, args.Error(1)
+// mockSubscriber implements queue.Subscriber for testing. It emits the
+// configured deliveries then closes the channel (or blocks once exhausted,
+// closing when ctx is done).
+type mockSubscriber struct {
+	deliveries []queue.Delivery
+	name       string
+	mu         sync.Mutex
+	idx        int
+	closed     bool
 }
 
-func (m *mockService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
-	return m.Called(ctx, jobID).Error(0)
+func (s *mockSubscriber) Subscribe(ctx context.Context) (<-chan queue.Delivery, error) {
+	out := make(chan queue.Delivery)
+	go func() {
+		defer close(out)
+		for {
+			s.mu.Lock()
+			if s.idx < len(s.deliveries) {
+				d := s.deliveries[s.idx]
+				s.idx++
+				s.mu.Unlock()
+				select {
+				case out <- d:
+				case <-ctx.Done():
+					return
+				}
+			} else {
+				s.mu.Unlock()
+				// All deliveries exhausted — block until ctx is done.
+				<-ctx.Done()
+				return
+			}
+		}
+	}()
+	return out, nil
 }
+
+func (s *mockSubscriber) Name() string { return s.name }
+
+func (s *mockSubscriber) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 // testConfig returns an EnrichmentConfig with fast intervals for testing.
 func testConfig(workerCount int) config.EnrichmentConfig {
@@ -127,7 +178,6 @@ func newTestJob() *enrichmentjob.Job {
 }
 
 // newPatternOnlyJob creates a Job with PatternID set and ChunkID nil.
-// This represents a legacy pattern-level enrichment job.
 func newPatternOnlyJob() *enrichmentjob.Job {
 	pid := uuid.New()
 	return &enrichmentjob.Job{
@@ -140,7 +190,6 @@ func newPatternOnlyJob() *enrichmentjob.Job {
 }
 
 // newChunkOnlyJob creates a Job with ChunkID set and PatternID nil.
-// This represents a chunk-only enrichment job.
 func newChunkOnlyJob() *enrichmentjob.Job {
 	cid := uuid.New()
 	return &enrichmentjob.Job{
@@ -165,86 +214,188 @@ func newBothIDsJob() *enrichmentjob.Job {
 	}
 }
 
+// makeDelivery builds a queue.Delivery whose Body encodes the given job ID and
+// whose Ack/Nack callbacks record whether they were called.
+func makeDelivery(jobID uuid.UUID, ackCalled, nackCalled *atomic.Bool) queue.Delivery {
+	body, _ := json.Marshal(map[string]string{"job_id": jobID.String()})
+	return queue.Delivery{
+		Body: body,
+		Ack: func() error {
+			ackCalled.Store(true)
+			return nil
+		},
+		Nack: func(_ bool) error {
+			nackCalled.Store(true)
+			return nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 func TestWorkerProcessesAvailableJobs(t *testing.T) {
 	t.Parallel()
 
-	svc := new(mockService)
 	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
 
-	var processed atomic.Bool
-
-	// First call returns a job; subsequent calls return nil (no more jobs).
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once().Run(func(_ mock.Arguments) {
-		processed.Store(true)
-	})
-
-	// Maintenance stubs (may or may not be called depending on timing).
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("ProcessJob", mock.Anything, job).Return(nil)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 
-	w := enricher.New(svc, testConfig(1), testLogger())
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	err := w.Run(ctx)
 	assert.NoError(t, err)
-	assert.True(t, processed.Load(), "job should have been processed")
+	assert.True(t, ackCalled.Load(), "delivery should be acked after successful processing")
+	assert.False(t, nackCalled.Load(), "delivery should not be nacked on success")
 	svc.AssertCalled(t, "ProcessJob", mock.Anything, job)
 }
 
-func TestWorkerSleepsWhenNoJobs(t *testing.T) {
+func TestWorkerNacksOnGetJobFailure(t *testing.T) {
 	t.Parallel()
 
-	svc := new(mockService)
 	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
 
-	var claimCount atomic.Int32
-
-	// Track claim calls. First several return nil, then return a job.
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Times(3).Run(func(_ mock.Arguments) {
-		claimCount.Add(1)
-	})
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once().Run(func(_ mock.Arguments) {
-		claimCount.Add(1)
-	})
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once()
-
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(nil, errors.New("db error"))
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 
-	w := enricher.New(svc, testConfig(1), testLogger())
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	err := w.Run(ctx)
 	assert.NoError(t, err)
+	assert.False(t, ackCalled.Load(), "delivery should not be acked when GetJob fails")
+	assert.True(t, nackCalled.Load(), "delivery should be nacked when GetJob fails")
+}
 
-	// Should have polled at least 4 times (3 nil + 1 job).
-	assert.GreaterOrEqual(t, claimCount.Load(), int32(4))
-	svc.AssertCalled(t, "ProcessJob", mock.Anything, job)
+func TestWorkerNacksOnMarkJobProcessingFailure(t *testing.T) {
+	t.Parallel()
+
+	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(errors.New("state error"))
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx)
+	assert.NoError(t, err)
+	assert.False(t, ackCalled.Load(), "delivery should not be acked when MarkJobProcessing fails")
+	assert.True(t, nackCalled.Load(), "delivery should be nacked when MarkJobProcessing fails")
+}
+
+func TestWorkerNacksOnProcessJobFailure(t *testing.T) {
+	t.Parallel()
+
+	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("ProcessJob", mock.Anything, job).Return(errors.New("pipeline error"))
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx)
+	assert.NoError(t, err)
+	assert.False(t, ackCalled.Load(), "delivery should not be acked when ProcessJob returns error")
+	assert.True(t, nackCalled.Load(), "delivery should be nacked when ProcessJob returns unrecoverable error")
+}
+
+func TestWorkerNacksOnInvalidDeliveryBody(t *testing.T) {
+	t.Parallel()
+
+	var nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name: "test-queue",
+		deliveries: []queue.Delivery{
+			{
+				Body: []byte("not json"),
+				Ack:  func() error { return nil },
+				Nack: func(_ bool) error { nackCalled.Store(true); return nil },
+			},
+		},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := w.Run(ctx)
+	assert.NoError(t, err)
+	assert.True(t, nackCalled.Load(), "delivery with invalid body should be nacked")
 }
 
 func TestWorkerGracefulShutdown(t *testing.T) {
 	t.Parallel()
 
 	svc := new(mockService)
-
-	// ClaimNextJob always returns nil so the worker just polls.
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 
-	w := enricher.New(svc, testConfig(2), testLogger())
+	// No deliveries; worker will block until ctx is cancelled.
+	sub := &mockSubscriber{name: "test-queue"}
+
+	w := enricher.New(svc, sub, testConfig(2), testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -268,29 +419,24 @@ func TestWorkerGracefulShutdown(t *testing.T) {
 func TestMultipleWorkersConcurrency(t *testing.T) {
 	t.Parallel()
 
-	// concurrentService tracks concurrent job processing without testify/mock
-	// to avoid the complexity of functional return values with mock.Return.
-	var (
-		mu             sync.Mutex
-		jobIndex       int
-		processedCount atomic.Int32
-	)
-
 	jobs := make([]*enrichmentjob.Job, 4)
+	deliveries := make([]queue.Delivery, 4)
 	for i := range jobs {
 		jobs[i] = newTestJob()
+		var ack, nack atomic.Bool
+		deliveries[i] = makeDelivery(jobs[i].ID, &ack, &nack)
 	}
 
+	var processedCount atomic.Int32
+
 	svc := &concurrentService{
-		claimFunc: func(_ context.Context) (*enrichmentjob.Job, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			if jobIndex < len(jobs) {
-				j := jobs[jobIndex]
-				jobIndex++
-				return j, nil
+		getJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+			for _, j := range jobs {
+				if j.ID == id {
+					return j, nil
+				}
 			}
-			return nil, nil
+			return nil, errors.New("job not found")
 		},
 		processFunc: func(_ context.Context, _ *enrichmentjob.Job) error {
 			processedCount.Add(1)
@@ -298,7 +444,12 @@ func TestMultipleWorkersConcurrency(t *testing.T) {
 		},
 	}
 
-	w := enricher.New(svc, testConfig(2), testLogger())
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: deliveries,
+	}
+
+	w := enricher.New(svc, sub, testConfig(2), testLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -312,8 +463,6 @@ func TestMaintenanceLoopRuns(t *testing.T) {
 	t.Parallel()
 
 	svc := new(mockService)
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -322,7 +471,8 @@ func TestMaintenanceLoopRuns(t *testing.T) {
 	// goroutine does not prevent shutdown. The actual maintenance calls happen on
 	// a 5-minute ticker, which is too slow for unit tests. We verify the wiring
 	// works by testing the exported Run method completes cleanly.
-	w := enricher.New(svc, testConfig(1), testLogger())
+	sub := &mockSubscriber{name: "test-queue"}
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -331,76 +481,12 @@ func TestMaintenanceLoopRuns(t *testing.T) {
 	assert.NoError(t, err, "worker should shut down cleanly even with maintenance goroutine")
 }
 
-func TestProcessJobErrorIsLoggedNotFatal(t *testing.T) {
-	t.Parallel()
-
-	svc := new(mockService)
-	job := newTestJob()
-
-	var processCount atomic.Int32
-
-	// First claim returns a job that will fail, second claim returns a job that succeeds.
-	job2 := newTestJob()
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(job2, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-
-	svc.On("ProcessJob", mock.Anything, job).Return(errors.New("unrecoverable error")).Once().
-		Run(func(_ mock.Arguments) { processCount.Add(1) })
-	svc.On("ProcessJob", mock.Anything, job2).Return(nil).Once().
-		Run(func(_ mock.Arguments) { processCount.Add(1) })
-
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	err := w.Run(ctx)
-	assert.NoError(t, err, "worker should not crash on ProcessJob error")
-	assert.GreaterOrEqual(t, processCount.Load(), int32(2), "worker should continue processing after error")
-}
-
-func TestClaimNextJobErrorIsLoggedNotFatal(t *testing.T) {
-	t.Parallel()
-
-	svc := new(mockService)
-	job := newTestJob()
-
-	var claimCount atomic.Int32
-
-	// First claim returns an error, subsequent claims succeed.
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, errors.New("db error")).Once().
-		Run(func(_ mock.Arguments) { claimCount.Add(1) })
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once().
-		Run(func(_ mock.Arguments) { claimCount.Add(1) })
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once()
-
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	err := w.Run(ctx)
-	assert.NoError(t, err, "worker should not crash on ClaimNextJob error")
-	assert.GreaterOrEqual(t, claimCount.Load(), int32(2), "worker should continue claiming after error")
-	svc.AssertCalled(t, "ProcessJob", mock.Anything, job)
-}
-
 func TestNewReturnsNonNil(t *testing.T) {
 	t.Parallel()
 
 	svc := new(mockService)
-	w := enricher.New(svc, testConfig(2), testLogger())
+	sub := &mockSubscriber{name: "test-queue"}
+	w := enricher.New(svc, sub, testConfig(2), testLogger())
 	assert.NotNil(t, w)
 }
 
@@ -414,22 +500,16 @@ func TestGracefulDrainWaitsForInflightJobs(t *testing.T) {
 	// returning.
 
 	var (
-		jobClaimed     atomic.Bool
 		processStarted = make(chan struct{})
 		processDone    atomic.Bool
 	)
 
 	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
 
 	svc := &concurrentService{
-		claimFunc: func(ctx context.Context) (*enrichmentjob.Job, error) {
-			// Return the job exactly once, then return nil.
-			if jobClaimed.CompareAndSwap(false, true) {
-				return job, nil
-			}
-			// Block on context to avoid busy-spinning while the job processes.
-			<-ctx.Done()
-			return nil, ctx.Err()
+		getJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
+			return job, nil
 		},
 		processFunc: func(ctx context.Context, _ *enrichmentjob.Job) error {
 			close(processStarted)
@@ -446,10 +526,15 @@ func TestGracefulDrainWaitsForInflightJobs(t *testing.T) {
 		},
 	}
 
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 2 * time.Second // Generous drain timeout.
 
-	w := enricher.New(svc, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -478,23 +563,22 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 	// timeout, their context is cancelled and Run returns.
 
 	var (
-		jobClaimed       atomic.Bool
-		processStarted   = make(chan struct{})
+		processStarted   = make(chan struct{}, 1)
 		contextCancelled atomic.Bool
 	)
 
 	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
 
 	svc := &concurrentService{
-		claimFunc: func(ctx context.Context) (*enrichmentjob.Job, error) {
-			if jobClaimed.CompareAndSwap(false, true) {
-				return job, nil
-			}
-			<-ctx.Done()
-			return nil, ctx.Err()
+		getJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
+			return job, nil
 		},
 		processFunc: func(ctx context.Context, _ *enrichmentjob.Job) error {
-			close(processStarted)
+			select {
+			case processStarted <- struct{}{}:
+			default:
+			}
 			// Simulate a very long job that exceeds the drain timeout.
 			select {
 			case <-time.After(10 * time.Second):
@@ -506,10 +590,15 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 		},
 	}
 
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 50 * time.Millisecond // Short drain timeout.
 
-	w := enricher.New(svc, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -531,155 +620,6 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 	}
 }
 
-func TestGracefulDrainStopsClaimingNewJobs(t *testing.T) {
-	t.Parallel()
-
-	// This test verifies that after context cancellation, no new jobs are
-	// claimed even if there are jobs available.
-
-	var (
-		claimedAfterCancel atomic.Bool
-		cancelTime         atomic.Int64
-	)
-
-	svc := &concurrentService{
-		claimFunc: func(ctx context.Context) (*enrichmentjob.Job, error) {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			// If cancel has already happened, record that a claim was attempted.
-			if cancelTime.Load() > 0 && time.Now().UnixNano() > cancelTime.Load() {
-				claimedAfterCancel.Store(true)
-			}
-			return nil, nil
-		},
-		processFunc: func(_ context.Context, _ *enrichmentjob.Job) error {
-			return nil
-		},
-	}
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() {
-		done <- w.Run(ctx)
-	}()
-
-	// Let the worker poll for a bit, then cancel.
-	time.Sleep(20 * time.Millisecond)
-	cancelTime.Store(time.Now().UnixNano())
-	cancel()
-
-	select {
-	case err := <-done:
-		assert.NoError(t, err)
-		// The worker should not claim jobs after context cancellation. The
-		// claimFunc may be called once more due to timing, but the key point
-		// is that Run returns promptly.
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return within expected time")
-	}
-}
-
-// --- Nil-pointer guard tests for PatternID / ChunkID ---
-
-// TestRunWorkerPatternOnlyJobNoPanic verifies that a job with PatternID set and
-// ChunkID nil is processed without panicking. This is the pre-existing "pattern
-// level" job shape.
-func TestRunWorkerPatternOnlyJobNoPanic(t *testing.T) {
-	t.Parallel()
-
-	svc := new(mockService)
-	job := newPatternOnlyJob()
-
-	var processed atomic.Bool
-
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once().Run(func(_ mock.Arguments) {
-		processed.Store(true)
-	})
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	assert.NotPanics(t, func() {
-		err := w.Run(ctx)
-		assert.NoError(t, err)
-	})
-	assert.True(t, processed.Load(), "pattern-only job should have been processed")
-}
-
-// TestRunWorkerChunkOnlyJobNoPanic verifies that a job with ChunkID set and
-// PatternID nil is processed without panicking. This is the chunk-only job
-// shape that was previously causing a nil pointer dereference.
-func TestRunWorkerChunkOnlyJobNoPanic(t *testing.T) {
-	t.Parallel()
-
-	svc := new(mockService)
-	job := newChunkOnlyJob()
-
-	var processed atomic.Bool
-
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once().Run(func(_ mock.Arguments) {
-		processed.Store(true)
-	})
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	assert.NotPanics(t, func() {
-		err := w.Run(ctx)
-		assert.NoError(t, err)
-	})
-	assert.True(t, processed.Load(), "chunk-only job should have been processed")
-}
-
-// TestRunWorkerBothIDsJobNoPanic verifies that a job with both PatternID and
-// ChunkID set is processed without panicking.
-func TestRunWorkerBothIDsJobNoPanic(t *testing.T) {
-	t.Parallel()
-
-	svc := new(mockService)
-	job := newBothIDsJob()
-
-	var processed atomic.Bool
-
-	svc.On("ClaimNextJob", mock.Anything).Return(job, nil).Once()
-	svc.On("ClaimNextJob", mock.Anything).Return(nil, nil).Maybe()
-	svc.On("ProcessJob", mock.Anything, job).Return(nil).Once().Run(func(_ mock.Arguments) {
-		processed.Store(true)
-	})
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	w := enricher.New(svc, testConfig(1), testLogger())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	assert.NotPanics(t, func() {
-		err := w.Run(ctx)
-		assert.NoError(t, err)
-	})
-	assert.True(t, processed.Load(), "job with both IDs should have been processed")
-}
-
 func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	t.Parallel()
 
@@ -689,31 +629,27 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	const workerCount = 3
 
 	var (
-		mu         sync.Mutex
-		jobIndex   int
 		allStarted = make(chan struct{})
 		started    atomic.Int32
 		completed  atomic.Int32
 	)
 
 	jobs := make([]*enrichmentjob.Job, workerCount)
+	deliveries := make([]queue.Delivery, workerCount)
 	for i := range jobs {
 		jobs[i] = newTestJob()
+		var ack, nack atomic.Bool
+		deliveries[i] = makeDelivery(jobs[i].ID, &ack, &nack)
 	}
 
 	svc := &concurrentService{
-		claimFunc: func(ctx context.Context) (*enrichmentjob.Job, error) {
-			mu.Lock()
-			if jobIndex < len(jobs) {
-				j := jobs[jobIndex]
-				jobIndex++
-				mu.Unlock()
-				return j, nil
+		getJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+			for _, j := range jobs {
+				if j.ID == id {
+					return j, nil
+				}
 			}
-			mu.Unlock()
-			// Block until context is cancelled to avoid busy-spinning.
-			<-ctx.Done()
-			return nil, ctx.Err()
+			return nil, errors.New("job not found")
 		},
 		processFunc: func(ctx context.Context, _ *enrichmentjob.Job) error {
 			count := started.Add(1)
@@ -731,10 +667,15 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 		},
 	}
 
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: deliveries,
+	}
+
 	cfg := testConfig(workerCount)
 	cfg.DrainTimeout = 2 * time.Second
 
-	w := enricher.New(svc, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -755,4 +696,105 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return within expected time")
 	}
+}
+
+// --- Nil-pointer guard tests for PatternID / ChunkID ---
+
+// TestRunWorkerPatternOnlyJobNoPanic verifies that a job with PatternID set and
+// ChunkID nil is processed without panicking.
+func TestRunWorkerPatternOnlyJobNoPanic(t *testing.T) {
+	t.Parallel()
+
+	job := newPatternOnlyJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("ProcessJob", mock.Anything, job).Return(nil)
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	assert.NotPanics(t, func() {
+		err := w.Run(ctx)
+		assert.NoError(t, err)
+	})
+	assert.True(t, ackCalled.Load(), "pattern-only job should have been acked")
+}
+
+// TestRunWorkerChunkOnlyJobNoPanic verifies that a job with ChunkID set and
+// PatternID nil is processed without panicking.
+func TestRunWorkerChunkOnlyJobNoPanic(t *testing.T) {
+	t.Parallel()
+
+	job := newChunkOnlyJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("ProcessJob", mock.Anything, job).Return(nil)
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	assert.NotPanics(t, func() {
+		err := w.Run(ctx)
+		assert.NoError(t, err)
+	})
+	assert.True(t, ackCalled.Load(), "chunk-only job should have been acked")
+}
+
+// TestRunWorkerBothIDsJobNoPanic verifies that a job with both PatternID and
+// ChunkID set is processed without panicking.
+func TestRunWorkerBothIDsJobNoPanic(t *testing.T) {
+	t.Parallel()
+
+	job := newBothIDsJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
+	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("ProcessJob", mock.Anything, job).Return(nil)
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	assert.NotPanics(t, func() {
+		err := w.Run(ctx)
+		assert.NoError(t, err)
+	})
+	assert.True(t, ackCalled.Load(), "job with both IDs should have been acked")
 }
