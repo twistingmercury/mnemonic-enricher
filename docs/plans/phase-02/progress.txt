@@ -22,3 +22,19 @@ Summary:
 Verification: docker build -t e2e-openai-stub src/tests/e2e/openai-stub && docker run ... | grep '"object"'
 Outcome: PASS — image built, stub container started, curl returned response containing "object"
 Tag: v0.0.1-cycle09-p2cycle01-p2cycle02
+
+## Cycle 3 - Update docker-compose, build script, and test runner
+Date: 2026-03-20
+Summary:
+  - Removed e2e_api service from src/tests/docker-compose.yaml
+  - Added e2e_openai_stub service (build from ./e2e/openai-stub/Dockerfile)
+  - Added healthcheck to e2e_enricher (CMD /mnemonic-enricher --health, interval 2s, retries 10)
+  - Added MNEMONIC_OPENAI_BASE_URL and MNEMONIC_ENRICHMENT_RETRY_DELAY env vars to e2e_enricher
+  - Added depends_on e2e_openai_stub: service_started to e2e_enricher
+  - Updated e2e_tests: replaced API_URL/MCP_URL with ENRICHER_URL, METRICS_URL retargeted to enricher, added POSTGRES_DSN, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, RABBITMQ_URL, OPENAI_STUB_URL
+  - Updated e2e_tests depends_on from e2e_api:service_healthy to e2e_enricher:service_healthy
+  - Updated src/build/build.sh: added e2e_openai_stub to infra startup list; replaced e2e_api with e2e_enricher in compose up call
+  - Updated src/tests/e2e/test-runner.sh: replaced API_URL with ENRICHER_URL throughout
+Verification: docker compose -f src/tests/docker-compose.yaml config > /dev/null
+Outcome: PASS — config parses without error; e2e_api absent; e2e_openai_stub and enricher healthcheck present
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03

@@ -75,7 +75,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `docker build -t e2e-openai-stub src/tests/e2e/openai-stub && docker rm -f _stub_test 2>/dev/null; docker run -d --name _stub_test -p 8090:8090 e2e-openai-stub && sleep 1 && curl -sf -X POST http://localhost:8090/v1/embeddings -H "Authorization: Bearer test" -H "Content-Type: application/json" -d "{}" | grep '"object"' && docker rm -f _stub_test`
   - Done: The `curl` exits 0 and the response contains `"object"`; the image builds without error
 
-- [ ] **Cycle 3 - Update docker-compose, build script, and test runner**: Remove `e2e_api` from the test compose; add `e2e_openai_stub`; add healthcheck and new env vars to `e2e_enricher`; retarget `e2e_tests` dependencies and env vars; update `build.sh` and `test-runner.sh` service names.
+- [x] **Cycle 3 - Update docker-compose, build script, and test runner**: Remove `e2e_api` from the test compose; add `e2e_openai_stub`; add healthcheck and new env vars to `e2e_enricher`; retarget `e2e_tests` dependencies and env vars; update `build.sh` and `test-runner.sh` service names.
   - Agent: `devops engineer`
   - Files: `src/tests/docker-compose.yaml`, `src/build/build.sh`, `src/tests/e2e/test-runner.sh`
   - Steps:
