@@ -72,7 +72,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./...`
   - Done: `go build ./...` exits 0 with zero errors
 
-- [ ] **Cycle 2 - Delete non-enrichment packages**: Remove all handler, service, repository, and MCP packages unrelated to enrichment; remove their imports and wiring from `server.go`.
+- [x] **Cycle 2 - Delete non-enrichment packages**: Remove all handler, service, repository, and MCP packages unrelated to enrichment; remove their imports and wiring from `server.go`.
   - Agent: `go software engineer`
   - Files: `src/internal/handlers/agents/`, `src/internal/handlers/patterns/`, `src/internal/handlers/skills/`, `src/internal/handlers/skillfiles/`, `src/internal/service/agent/`, `src/internal/service/pattern/`, `src/internal/service/search/`, `src/internal/service/skill/`, `src/internal/service/skillfile/`, `src/internal/repository/skill/`, `src/internal/repository/skillfile/`, `src/internal/mcpserver/`, `src/docs/swagger/`, `src/internal/handlers/respond.go`, `src/internal/handlers/respond_test.go`, `src/internal/server/server.go`
   - Steps:

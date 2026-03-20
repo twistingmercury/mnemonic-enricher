@@ -14,3 +14,24 @@ Verification: cd src && go build ./... && go vet ./...
 Outcome: Both exited 0 with no errors
 
 Notes: None — clean cycle, no follow-up issues.
+
+## Cycle 2 - Delete non-enrichment packages
+Date: 2026-03-20
+Commit: 92f002b
+Tag: v0.0.1-cycle02
+
+Summary:
+- Deleted handler packages: agents/, patterns/, skills/, skillfiles/, respond.go, respond_test.go
+- Deleted service packages: agent/, pattern/, search/, skill/, skillfile/
+- Deleted repository packages: skill/, skillfile/
+- Deleted mcpserver/ entirely
+- Deleted e2e test files: agents_test.go, patterns_test.go, skills_test.go, skillfiles_test.go, mcp/mcp_test.go
+- Simplified server.go: removed all deleted package imports, MCP port from startup log,
+  runMCPServer goroutine; wireDependencies now returns (*enricher.Worker, error)
+- Note: src/docs/swagger/ did not exist; nothing to delete there
+
+Verification: cd src && go build ./... && go vet ./... && go test ./...
+Outcome: All three exited 0; 14 packages built/tested with no errors
+
+Notes: LSP editor diagnostics showed false BrokenImport errors — these are an editor
+tooling issue (LSP pointed at project root, not src/). Actual Go toolchain passed cleanly.
