@@ -16,9 +16,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/twistingmercury/mnemonic/internal/handlers"
-	skillrepo "github.com/twistingmercury/mnemonic/internal/repository/skill"
-	skillsvc "github.com/twistingmercury/mnemonic/internal/service/skill"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers"
+	skillrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
+	skillsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skill"
 )
 
 var skillNameRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)

@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 // TestDefaultValues verifies that all default values are set correctly.

@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/twistingmercury/mnemonic/internal/handlers"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	agentsvc "github.com/twistingmercury/mnemonic/internal/service/agent"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	agentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/agent"
 )
 
 // agentNameRe is the compiled pattern for valid agent names.

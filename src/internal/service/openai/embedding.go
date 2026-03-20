@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/twistingmercury/mnemonic/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 // ErrEmbeddingFailed is returned when embedding generation fails after all retries.

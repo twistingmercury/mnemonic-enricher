@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/telemetry"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
 )
 
 func createTestConfig() *config.MnemonicConfig {

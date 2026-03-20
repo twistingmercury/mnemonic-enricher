@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twistingmercury/mnemonic/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 // ErrExtractionFailed is returned when concept extraction fails after all retries.

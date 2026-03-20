@@ -12,7 +12,7 @@ import (
 	"github.com/pashagolub/pgxmock/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
 )
 
 var testSkillID = uuid.New()

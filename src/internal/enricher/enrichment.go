@@ -7,9 +7,9 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/twistingmercury/mnemonic/internal/config"
-	enrichmentjob "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	enrichmentsvc "github.com/twistingmercury/mnemonic/internal/service/enrichment"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 )
 
 // defaultMaintenanceInterval is the interval between maintenance loop iterations.

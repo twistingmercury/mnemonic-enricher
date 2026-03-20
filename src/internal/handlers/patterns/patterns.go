@@ -18,11 +18,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/handlers"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 // kebabCaseRe matches lowercase kebab-case identifiers (e.g., "go-pattern", "go-error-handling").

@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/handlers/skillfiles"
-	skillfilerepo "github.com/twistingmercury/mnemonic/internal/repository/skillfile"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	skillfilesvc "github.com/twistingmercury/mnemonic/internal/service/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/skillfiles"
+	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	skillfilesvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skillfile"
 )
 
 func init() {

@@ -13,11 +13,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
 // Service handles semantic search over patterns.

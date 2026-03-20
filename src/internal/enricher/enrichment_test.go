@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/enricher"
-	enrichmentjob "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 )
 
 // concurrentService is a hand-written mock for tests that need dynamic return

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/twistingmercury/mnemonic/tests/e2e/helpers"
+	"github.com/twistingmercury/mnemonic-enricher/tests/e2e/helpers"
 )
 
 // =============================================================================

@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/service/openai"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
 func testExtractionConfig() config.OpenAIConfig {

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
-	"github.com/twistingmercury/mnemonic/internal/repository"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
 )
 
 // Compile-time interface check.

@@ -14,14 +14,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	enrichmentrepo "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	enrichmentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
 )
 
 // ---------- Mock: patternrepo.Repository ----------

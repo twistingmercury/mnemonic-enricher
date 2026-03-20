@@ -13,10 +13,10 @@ import (
 	"strconv"
 
 	"github.com/rs/zerolog"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	"github.com/twistingmercury/mnemonic/internal/service"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
 )
 
 // Service defines the operations for managing agent lifecycle.

@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/server"
-	"github.com/twistingmercury/mnemonic/internal/version"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/server"
+	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 )
 
 var verFlag = pflag.Bool("version", false, "Displays current version information for mnemonic")

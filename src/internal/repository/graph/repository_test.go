@@ -9,7 +9,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository/graph"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
 )
 
 // --- Mock types ---

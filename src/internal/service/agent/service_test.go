@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	agentsvc "github.com/twistingmercury/mnemonic/internal/service/agent"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	agentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/agent"
 )
 
 // --- Mock: agentrepo.Repository ---

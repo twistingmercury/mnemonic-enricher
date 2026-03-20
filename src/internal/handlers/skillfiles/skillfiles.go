@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/twistingmercury/mnemonic/internal/handlers"
-	skillfilerepo "github.com/twistingmercury/mnemonic/internal/repository/skillfile"
-	skillfilesvc "github.com/twistingmercury/mnemonic/internal/service/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers"
+	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
+	skillfilesvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skillfile"
 )
 
 // filenameRe matches valid filenames: start with letter/digit, then letters/digits/dot/hyphen/underscore.

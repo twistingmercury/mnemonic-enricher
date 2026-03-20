@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 func TestResolveServerPort_Default(t *testing.T) {

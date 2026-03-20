@@ -18,13 +18,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	enrichmentjob "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
 // errPipelineFailed is a sentinel returned by runGraphPipeline when a pipeline

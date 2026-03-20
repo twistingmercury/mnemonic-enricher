@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/handlers/agents"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	agentsvc "github.com/twistingmercury/mnemonic/internal/service/agent"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/agents"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	agentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/agent"
 )
 
 func init() {

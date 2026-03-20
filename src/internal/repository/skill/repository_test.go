@@ -13,8 +13,8 @@ import (
 	"github.com/pashagolub/pgxmock/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	"github.com/twistingmercury/mnemonic/internal/repository/skill"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
 )
 
 // testDefinition returns a sample JSONB definition for testing.

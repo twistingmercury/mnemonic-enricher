@@ -15,30 +15,39 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/database"
-	"github.com/twistingmercury/mnemonic/internal/enricher"
-	"github.com/twistingmercury/mnemonic/internal/handlers/operations"
-	"github.com/twistingmercury/mnemonic/internal/health"
-	"github.com/twistingmercury/mnemonic/internal/mcpserver"
-	"github.com/twistingmercury/mnemonic/internal/middleware"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	enrichmentjobrepo "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	skillrepo "github.com/twistingmercury/mnemonic/internal/repository/skill"
-	skillfilerepo "github.com/twistingmercury/mnemonic/internal/repository/skillfile"
-	agentsvc "github.com/twistingmercury/mnemonic/internal/service/agent"
-	enrichmentsvc "github.com/twistingmercury/mnemonic/internal/service/enrichment"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
-	skillsvc "github.com/twistingmercury/mnemonic/internal/service/skill"
-	skillfilesvc "github.com/twistingmercury/mnemonic/internal/service/skillfile"
-	"github.com/twistingmercury/mnemonic/internal/telemetry"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/database"
+	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/operations"
+	"github.com/twistingmercury/mnemonic-enricher/internal/health"
+	"github.com/twistingmercury/mnemonic-enricher/internal/mcpserver"
+	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	enrichmentjobrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	skillrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
+	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
+	agentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/agent"
+	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
+	skillsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skill"
+	skillfilesvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
 	otelxgin "github.com/twistingmercury/otelx/middleware/gin"
 )
+
+// Services groups all domain services required by the REST API handlers.
+type Services struct {
+	Agent     agentsvc.Service
+	Pattern   patternsvc.Service
+	Search    searchsvc.Service
+	Skill     skillsvc.Service
+	SkillFile skillfilesvc.Service
+}
 
 // ListenAndServe starts the mnemonic server. It initializes telemetry,
 // establishes database connections, wires all dependencies, and runs the
@@ -85,7 +94,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	}
 
 	// Wire all dependencies.
-	svc, toolDeps, enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
+	_, toolDeps, enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to wire dependencies: %w", err)
 	}
@@ -99,7 +108,6 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	// Build the Admin API router.
 	router := setupRouter(tel, requestMetrics)
 	operations.SetupHandlers(router, health.Descriptors())
-	RegisterAPIRoutes(router, svc, cfg.Vocabulary)
 
 	// Build the Admin API HTTP server.
 	adminServer := CreateHTTPServer(router, cfg)
