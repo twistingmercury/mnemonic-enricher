@@ -395,7 +395,6 @@ func (m *mockChunkRepo) AnyFailedForPattern(ctx context.Context, patternID uuid.
 func testConfig() config.EnrichmentConfig {
 	return config.EnrichmentConfig{
 		WorkerCount:            2,
-		PollInterval:           5 * time.Second,
 		MaxAttempts:            3,
 		RetryDelay:             30 * time.Second,
 		JobTimeout:             5 * time.Minute,

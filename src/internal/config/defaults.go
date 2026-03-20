@@ -65,7 +65,6 @@ const (
 // Default values for enrichment configuration
 const (
 	DefaultEnrichmentWorkerCount            = 2
-	DefaultEnrichmentPollInterval           = 5 * time.Second
 	DefaultEnrichmentMaxAttempts            = 3
 	DefaultEnrichmentRetryDelay             = 30 * time.Second
 	DefaultEnrichmentJobTimeout             = 5 * time.Minute
@@ -73,6 +72,18 @@ const (
 	DefaultEnrichmentCompletedRetention     = 168 * time.Hour // 7 days
 	DefaultEnrichmentFailedRetention        = 720 * time.Hour // 30 days
 	DefaultEnrichmentRelatedToMinSimilarity = 0.3
+)
+
+// Default values for queue configuration
+const (
+	DefaultQueueProvider          = "rabbitmq"
+	DefaultRabbitMQHost           = "localhost"
+	DefaultRabbitMQPort           = 5672
+	DefaultRabbitMQUser           = "guest"
+	DefaultRabbitMQVHost          = "/"
+	DefaultRabbitMQQueue          = "enrichment-jobs"
+	DefaultRabbitMQPrefetchCount  = 5
+	DefaultRabbitMQReconnectDelay = 5 * time.Second
 )
 
 // Default values for logging configuration

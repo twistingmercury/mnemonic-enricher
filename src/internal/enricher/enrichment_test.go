@@ -82,7 +82,6 @@ func (m *mockService) CleanupFailedJobs(ctx context.Context) (int64, error) {
 func testConfig(workerCount int) config.EnrichmentConfig {
 	return config.EnrichmentConfig{
 		WorkerCount:            workerCount,
-		PollInterval:           1 * time.Millisecond,
 		MaxAttempts:            3,
 		RetryDelay:             10 * time.Millisecond,
 		JobTimeout:             1 * time.Second,

@@ -76,7 +76,6 @@ func TestDefaultValues(t *testing.T) {
 
 	// Enrichment defaults
 	assert.Equal(t, config.DefaultEnrichmentWorkerCount, cfg.Enrichment.WorkerCount)
-	assert.Equal(t, config.DefaultEnrichmentPollInterval, cfg.Enrichment.PollInterval)
 	assert.Equal(t, config.DefaultEnrichmentMaxAttempts, cfg.Enrichment.MaxAttempts)
 	assert.Equal(t, config.DefaultEnrichmentRetryDelay, cfg.Enrichment.RetryDelay)
 	assert.Equal(t, config.DefaultEnrichmentJobTimeout, cfg.Enrichment.JobTimeout)
@@ -99,6 +98,16 @@ func TestDefaultValues(t *testing.T) {
 	assert.Equal(t, config.DefaultTracingEnabled, cfg.Observability.Tracing.Enabled)
 	assert.Equal(t, config.DefaultTracingSampleRate, cfg.Observability.Tracing.SampleRate)
 	assert.Equal(t, config.DefaultTracingOTLPInsecure, cfg.Observability.Tracing.OTLPInsecure)
+
+	// Queue defaults
+	assert.Equal(t, config.DefaultQueueProvider, cfg.Queue.Provider)
+	assert.Equal(t, config.DefaultRabbitMQHost, cfg.Queue.RabbitMQ.Host)
+	assert.Equal(t, config.DefaultRabbitMQPort, cfg.Queue.RabbitMQ.Port)
+	assert.Equal(t, config.DefaultRabbitMQUser, cfg.Queue.RabbitMQ.User)
+	assert.Equal(t, config.DefaultRabbitMQVHost, cfg.Queue.RabbitMQ.VHost)
+	assert.Equal(t, config.DefaultRabbitMQQueue, cfg.Queue.RabbitMQ.Queue)
+	assert.Equal(t, config.DefaultRabbitMQPrefetchCount, cfg.Queue.RabbitMQ.PrefetchCount)
+	assert.Equal(t, config.DefaultRabbitMQReconnectDelay, cfg.Queue.RabbitMQ.ReconnectDelay)
 }
 
 // TestYAMLFileLoading verifies that configuration can be loaded from a YAML file.
@@ -734,13 +743,6 @@ func TestValidation_EnrichmentConfig(t *testing.T) {
 				cfg.Enrichment.WorkerCount = 0
 			},
 			expectError: "enrichment.worker_count",
-		},
-		{
-			name: "zero poll_interval",
-			modify: func(cfg *config.MnemonicConfig) {
-				cfg.Enrichment.PollInterval = 0
-			},
-			expectError: "enrichment.poll_interval",
 		},
 		{
 			name: "zero max_attempts",
@@ -1643,7 +1645,6 @@ func validConfig() *config.MnemonicConfig {
 		},
 		Enrichment: config.EnrichmentConfig{
 			WorkerCount:            2,
-			PollInterval:           5 * time.Second,
 			MaxAttempts:            3,
 			RetryDelay:             30 * time.Second,
 			JobTimeout:             5 * time.Minute,

@@ -19,6 +19,7 @@ type MnemonicConfig struct {
 	OpenAI        OpenAIConfig        `mapstructure:"openai"`
 	RateLimit     RateLimitConfig     `mapstructure:"rate_limit"`
 	Enrichment    EnrichmentConfig    `mapstructure:"enrichment"`
+	Queue         QueueConfig         `mapstructure:"queue"`
 	Logging       LoggingConfig       `mapstructure:"logging"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
 	Vocabulary    VocabularyConfig    `mapstructure:"vocabulary"`
@@ -114,7 +115,6 @@ type PerUserRateLimit struct {
 // EnrichmentConfig contains enrichment worker settings.
 type EnrichmentConfig struct {
 	WorkerCount            int           `mapstructure:"worker_count"`
-	PollInterval           time.Duration `mapstructure:"poll_interval"`
 	MaxAttempts            int           `mapstructure:"max_attempts"`
 	RetryDelay             time.Duration `mapstructure:"retry_delay"`
 	JobTimeout             time.Duration `mapstructure:"job_timeout"`
@@ -122,6 +122,24 @@ type EnrichmentConfig struct {
 	CompletedRetention     time.Duration `mapstructure:"completed_retention"`
 	FailedRetention        time.Duration `mapstructure:"failed_retention"`
 	RelatedToMinSimilarity float64       `mapstructure:"related_to_min_similarity"`
+}
+
+// QueueConfig contains message queue settings.
+type QueueConfig struct {
+	Provider string         `mapstructure:"provider"`
+	RabbitMQ RabbitMQConfig `mapstructure:"rabbitmq"`
+}
+
+// RabbitMQConfig contains RabbitMQ connection settings.
+type RabbitMQConfig struct {
+	Host           string        `mapstructure:"host"`
+	Port           int           `mapstructure:"port"`
+	User           string        `mapstructure:"user"`
+	Password       string        `mapstructure:"password"` // #nosec G117 -- credentials loaded from config/env, not serialized
+	VHost          string        `mapstructure:"vhost"`
+	Queue          string        `mapstructure:"queue"`
+	PrefetchCount  int           `mapstructure:"prefetch_count"`
+	ReconnectDelay time.Duration `mapstructure:"reconnect_delay"`
 }
 
 // LoggingConfig contains logging settings.
@@ -311,7 +329,6 @@ func SetDefaults(v *viper.Viper) {
 
 	// Enrichment defaults
 	v.SetDefault("enrichment.worker_count", DefaultEnrichmentWorkerCount)
-	v.SetDefault("enrichment.poll_interval", DefaultEnrichmentPollInterval)
 	v.SetDefault("enrichment.max_attempts", DefaultEnrichmentMaxAttempts)
 	v.SetDefault("enrichment.retry_delay", DefaultEnrichmentRetryDelay)
 	v.SetDefault("enrichment.job_timeout", DefaultEnrichmentJobTimeout)
@@ -319,6 +336,17 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("enrichment.completed_retention", DefaultEnrichmentCompletedRetention)
 	v.SetDefault("enrichment.failed_retention", DefaultEnrichmentFailedRetention)
 	v.SetDefault("enrichment.related_to_min_similarity", DefaultEnrichmentRelatedToMinSimilarity)
+
+	// Queue defaults
+	v.SetDefault("queue.provider", DefaultQueueProvider)
+	v.SetDefault("queue.rabbitmq.host", DefaultRabbitMQHost)
+	v.SetDefault("queue.rabbitmq.port", DefaultRabbitMQPort)
+	v.SetDefault("queue.rabbitmq.user", DefaultRabbitMQUser)
+	v.SetDefault("queue.rabbitmq.password", "")
+	v.SetDefault("queue.rabbitmq.vhost", DefaultRabbitMQVHost)
+	v.SetDefault("queue.rabbitmq.queue", DefaultRabbitMQQueue)
+	v.SetDefault("queue.rabbitmq.prefetch_count", DefaultRabbitMQPrefetchCount)
+	v.SetDefault("queue.rabbitmq.reconnect_delay", DefaultRabbitMQReconnectDelay)
 
 	// Logging defaults
 	v.SetDefault("logging.level", DefaultLoggingLevel)
@@ -704,13 +732,6 @@ func (c *EnrichmentConfig) validate() ValidationErrors {
 		errs = append(errs, ValidationError{
 			Field:   "enrichment.worker_count",
 			Message: "must be at least 1",
-		})
-	}
-
-	if c.PollInterval <= 0 {
-		errs = append(errs, ValidationError{
-			Field:   "enrichment.poll_interval",
-			Message: "must be a positive duration",
 		})
 	}
 

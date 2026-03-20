@@ -78,7 +78,6 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	w.logger.Info().
 		Int("worker_count", w.cfg.WorkerCount).
-		Dur("poll_interval", w.cfg.PollInterval).
 		Dur("drain_timeout", w.cfg.DrainTimeout).
 		Msg("enrichment worker started")
 
@@ -151,13 +150,13 @@ func (w *Worker) runWorker(claimCtx, drainCtx context.Context, id int, inflight 
 				return
 			}
 			log.Error().Err(err).Msg("failed to claim job")
-			w.sleep(claimCtx, w.cfg.PollInterval)
+			w.sleep(claimCtx, w.cfg.RetryDelay)
 			continue
 		}
 
 		if job == nil {
 			// No pending jobs; sleep before polling again.
-			w.sleep(claimCtx, w.cfg.PollInterval)
+			w.sleep(claimCtx, w.cfg.RetryDelay)
 			continue
 		}
 
