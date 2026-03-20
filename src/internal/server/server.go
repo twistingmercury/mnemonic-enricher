@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,39 +19,22 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
 	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/operations"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
-	"github.com/twistingmercury/mnemonic-enricher/internal/mcpserver"
 	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
 	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjobrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
 	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
-	skillrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
-	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
-	agentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/agent"
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
-	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
-	skillsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skill"
-	skillfilesvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skillfile"
 	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
 	otelxgin "github.com/twistingmercury/otelx/middleware/gin"
 )
 
-// Services groups all domain services required by the REST API handlers.
-type Services struct {
-	Agent     agentsvc.Service
-	Pattern   patternsvc.Service
-	Search    searchsvc.Service
-	Skill     skillsvc.Service
-	SkillFile skillfilesvc.Service
-}
-
 // ListenAndServe starts the mnemonic server. It initializes telemetry,
 // establishes database connections, wires all dependencies, and runs the
-// Admin API, MCP server, and enrichment worker concurrently. It blocks until
-// a shutdown signal is received or a component returns a fatal error.
+// Admin API and enrichment worker concurrently. It blocks until a shutdown
+// signal is received or a component returns a fatal error.
 func ListenAndServe(cfg *config.MnemonicConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -73,7 +55,6 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	logger.Info().
 		Str("host", cfg.Server.Host).
 		Int("admin_port", cfg.Server.Port).
-		Int("mcp_port", cfg.MCP.Port).
 		Bool("metrics_enabled", cfg.Observability.Metrics.Enabled).
 		Bool("tracing_enabled", cfg.Observability.Tracing.Enabled).
 		Msg("mnemonic starting")
@@ -94,7 +75,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	}
 
 	// Wire all dependencies.
-	_, toolDeps, enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
+	enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to wire dependencies: %w", err)
 	}
@@ -112,20 +93,11 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	// Build the Admin API HTTP server.
 	adminServer := CreateHTTPServer(router, cfg)
 
-	// Build the MCP HTTP server.
-	mcpSrv := mcpserver.NewMCPServer(toolDeps, logger, cfg.MCP)
-	mcpHandler := mcpserver.NewMCPHTTPHandler(mcpSrv)
-	mcpHTTPServer := mcpserver.NewMCPHTTPServer(cfg.MCP, cfg.Server.Host, mcpHandler)
-
 	// Run all components concurrently.
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		return runHTTPServer(gCtx, adminServer, cfg, logger, "admin_api")
-	})
-
-	g.Go(func() error {
-		return runMCPServer(gCtx, mcpHTTPServer, logger)
 	})
 
 	g.Go(func() error {
@@ -185,18 +157,16 @@ func closeDatabases(pgPool *pgxpool.Pool, neo4jDriver neo4j.DriverWithContext, l
 }
 
 // wireDependencies creates all repositories, services, and the enrichment
-// worker. Returns the route Services, MCP ToolDependencies, and enrichment Worker.
+// worker. Returns the enrichment Worker.
 func wireDependencies(
 	pgPool *pgxpool.Pool,
 	neo4jDriver neo4j.DriverWithContext,
 	cfg *config.MnemonicConfig,
 	logger zerolog.Logger,
-) (Services, mcpserver.ToolDependencies, *enricher.Worker, error) {
+) (*enricher.Worker, error) {
 	// Repositories.
 	agentRepo := agentrepo.NewRepository(pgPool)
 	patternRepo := patternrepo.NewRepository(pgPool)
-	skillRepo := skillrepo.NewRepository(pgPool)
-	skillFileRepo := skillfilerepo.NewRepository(pgPool)
 	enrichmentJobRepo := enrichmentjobrepo.NewRepository(pgPool)
 	graphRepo := graphrepo.NewRepository(neo4jDriver, cfg.Database.Neo4j.Database)
 	chunkRepo := chunkrepo.NewRepository(pgPool)
@@ -205,37 +175,20 @@ func wireDependencies(
 	embeddingSvc := openaisvc.NewEmbeddingService(cfg.OpenAI)
 	extractionSvc := openaisvc.NewExtractionService(cfg.OpenAI)
 
-	// Domain services.
-	agentSvc := agentsvc.New(agentRepo, graphRepo, logger)
-	skillSvc := skillsvc.New(skillRepo, logger)
-	skillFileSvc := skillfilesvc.New(skillFileRepo, skillRepo, logger)
-	searchSvc := searchsvc.New(embeddingSvc, patternRepo, agentRepo, chunkRepo, logger)
-	patternSvc := patternsvc.New(patternRepo, enrichmentJobRepo, graphRepo, agentRepo, pgPool, chunkRepo, logger)
+	// Enrichment service.
 	enrichmentSvc, err := enrichmentsvc.New(
 		enrichmentJobRepo, patternRepo, agentRepo, graphRepo,
 		embeddingSvc, extractionSvc,
 		cfg.Enrichment, chunkRepo, logger,
 	)
 	if err != nil {
-		return Services{}, nil, nil, fmt.Errorf("wire enrichment service: %w", err)
-	}
-
-	// MCP facade.
-	toolDeps := mcpserver.NewToolDependencies(searchSvc, patternSvc)
-
-	// REST API services.
-	svc := Services{
-		Agent:     agentSvc,
-		Pattern:   patternSvc,
-		Search:    searchSvc,
-		Skill:     skillSvc,
-		SkillFile: skillFileSvc,
+		return nil, fmt.Errorf("wire enrichment service: %w", err)
 	}
 
 	// Enrichment worker.
 	enrichWorker := enricher.New(enrichmentSvc, cfg.Enrichment, logger)
 
-	return svc, toolDeps, enrichWorker, nil
+	return enrichWorker, nil
 }
 
 // runHTTPServer starts the admin API HTTP server and gracefully shuts it down
@@ -276,44 +229,6 @@ func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicCo
 	}
 	return nil
 }
-
-// runMCPServer starts the MCP HTTP server and gracefully shuts it down when
-// the context is cancelled.
-func runMCPServer(ctx context.Context, srv *http.Server, logger zerolog.Logger) error {
-	errCh := make(chan error, 1)
-
-	go func() {
-		logger.Info().
-			Str("addr", srv.Addr).
-			Str("component", "mcp").
-			Msg("MCP server listening")
-
-		err := srv.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("mcp server error: %w", err)
-		}
-		close(errCh)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-	}
-
-	// Use a fixed 5s timeout for MCP shutdown; it has no long-running requests.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), mcpShutdownTimeout)
-	defer cancel()
-
-	logger.Info().Str("component", "mcp").Msg("shutting down MCP server")
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("mcp shutdown error: %w", err)
-	}
-	return nil
-}
-
-// mcpShutdownTimeout is the grace period for MCP server shutdown.
-const mcpShutdownTimeout = 5 * time.Second
 
 // setupRouter creates and configures the Gin router with middleware.
 func setupRouter(tel *telemetry.Telemetry, requestMetrics *middleware.RequestMetrics) *gin.Engine {
