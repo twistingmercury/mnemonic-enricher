@@ -108,7 +108,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `cd src/tests/e2e && go build ./... && ! grep -rq "TestSwaggerUI\|TestHealthCheck_Unhealthy" src/tests/e2e/`
   - Done: `go build ./...` exits 0; neither deleted test name appears anywhere under `src/tests/e2e/`
 
-- [ ] **Cycle 6 - Write pipeline happy path test**: Write `TestEnrichmentPipeline_HappyPath` verifying the full enrichment pipeline for a chunk-based job.
+- [x] **Cycle 6 - Write pipeline happy path test**: Write `TestEnrichmentPipeline_HappyPath` verifying the full enrichment pipeline for a chunk-based job.
   - Agent: `go e2e test engineer`
   - Files: `src/tests/e2e/pipeline/enrichment_test.go`
   - Steps:
