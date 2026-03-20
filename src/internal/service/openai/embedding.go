@@ -41,9 +41,13 @@ type openaiEmbedding struct {
 
 // NewEmbeddingService creates an EmbeddingService backed by the OpenAI embeddings API.
 func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
+	baseURL := embeddingsEndpoint
+	if cfg.BaseURL != "" {
+		baseURL = cfg.BaseURL
+	}
 	return &openaiEmbedding{
 		client:     &http.Client{Timeout: 30 * time.Second},
-		baseURL:    embeddingsEndpoint,
+		baseURL:    baseURL,
 		apiKey:     cfg.APIKey,
 		model:      cfg.EmbeddingModel,
 		dimensions: cfg.EmbeddingDimensions,

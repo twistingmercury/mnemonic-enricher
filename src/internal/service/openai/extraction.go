@@ -57,9 +57,13 @@ type openaiExtraction struct {
 
 // NewExtractionService creates an ExtractionService backed by the OpenAI chat completions API.
 func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
+	baseURL := chatCompletionsEndpoint
+	if cfg.BaseURL != "" {
+		baseURL = cfg.BaseURL
+	}
 	return &openaiExtraction{
 		client:     &http.Client{Timeout: 60 * time.Second},
-		baseURL:    chatCompletionsEndpoint,
+		baseURL:    baseURL,
 		apiKey:     cfg.APIKey,
 		model:      cfg.ExtractionModel,
 		retries:    cfg.RetryAttempts,

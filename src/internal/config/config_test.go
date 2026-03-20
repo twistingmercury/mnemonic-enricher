@@ -66,6 +66,7 @@ func TestDefaultValues(t *testing.T) {
 	assert.Equal(t, config.DefaultOpenAIMaxRequestsPerMinute, cfg.OpenAI.MaxRequestsPerMinute)
 	assert.Equal(t, config.DefaultOpenAIRetryAttempts, cfg.OpenAI.RetryAttempts)
 	assert.Equal(t, config.DefaultOpenAIRetryDelay, cfg.OpenAI.RetryDelay)
+	assert.Equal(t, config.DefaultOpenAIBaseURL, cfg.OpenAI.BaseURL)
 
 	// Rate limit defaults
 	assert.Equal(t, config.DefaultRateLimitEnabled, cfg.RateLimit.Enabled)
@@ -1679,5 +1680,37 @@ func validConfig() *config.MnemonicConfig {
 			Languages: []string{"agnostic", "go", "python"},
 			Domains:   []string{"backend", "frontend", "testing"},
 		},
+	}
+}
+
+func TestOpenAIBaseURL_EnvOverride(t *testing.T) {
+	clearMnemonicEnvVars(t)
+	t.Setenv("MNEMONIC_OPENAI_BASE_URL", "http://localhost:8090/v1")
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.SetEnvPrefix("MNEMONIC")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	assert.Equal(t, "http://localhost:8090/v1", cfg.OpenAI.BaseURL)
+}
+
+func TestOpenAIBaseURL_ValidateAcceptsValidURL(t *testing.T) {
+	clearMnemonicEnvVars(t)
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.Set("openai.base_url", "http://localhost:8090/v1")
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	errs := cfg.Validate()
+	for _, e := range errs {
+		assert.NotEqual(t, "openai.base_url", e.Field)
 	}
 }

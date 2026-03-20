@@ -90,6 +90,7 @@ type Neo4jConfig struct {
 // OpenAIConfig contains OpenAI API settings.
 type OpenAIConfig struct {
 	APIKey               string        `mapstructure:"api_key"` // #nosec G117 -- credentials loaded from config/env, not serialized
+	BaseURL              string        `mapstructure:"base_url"`
 	EmbeddingModel       string        `mapstructure:"embedding_model"`
 	EmbeddingDimensions  int           `mapstructure:"embedding_dimensions"`
 	ExtractionModel      string        `mapstructure:"extraction_model"`
@@ -319,6 +320,7 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("openai.max_requests_per_minute", DefaultOpenAIMaxRequestsPerMinute)
 	v.SetDefault("openai.retry_attempts", DefaultOpenAIRetryAttempts)
 	v.SetDefault("openai.retry_delay", DefaultOpenAIRetryDelay)
+	v.SetDefault("openai.base_url", DefaultOpenAIBaseURL)
 
 	// Rate limit defaults
 	v.SetDefault("rate_limit.enabled", DefaultRateLimitEnabled)
@@ -684,6 +686,15 @@ func (c *OpenAIConfig) validate() ValidationErrors {
 			Field:   "openai.retry_delay",
 			Message: "must be non-negative",
 		})
+	}
+
+	if c.BaseURL != "" {
+		if _, err := url.Parse(c.BaseURL); err != nil {
+			errs = append(errs, ValidationError{
+				Field:   "openai.base_url",
+				Message: fmt.Sprintf("must be a valid URL: %v", err),
+			})
+		}
 	}
 
 	return errs

@@ -45,6 +45,7 @@ const (
 
 // Default values for OpenAI configuration
 const (
+	DefaultOpenAIBaseURL              = "https://api.openai.com/v1"
 	DefaultOpenAIEmbeddingModel       = "text-embedding-3-large"
 	DefaultOpenAIEmbeddingDimensions  = 2000
 	DefaultOpenAIExtractionModel      = "gpt-4o-mini"
