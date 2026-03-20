@@ -35,6 +35,14 @@ var errPipelineFailed = errors.New("pipeline step failed; failure recorded")
 // Service defines the worker-facing interface for processing enrichment jobs.
 // The enrichment worker goroutine calls these methods; REST/MCP handlers do not.
 type Service interface {
+	// GetJob retrieves an enrichment job by ID.
+	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
+	GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error)
+
+	// MarkJobProcessing transitions a job to the processing state.
+	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
+	MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error
+
 	// ClaimNextJob atomically claims the next pending enrichment job.
 	// Returns (nil, nil) if no jobs are available.
 	ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error)
@@ -125,6 +133,16 @@ func New(
 		cfg:           cfg,
 		logger:        logger,
 	}, nil
+}
+
+// GetJob retrieves an enrichment job by ID.
+func (s *enrichmentService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
+	return s.jobRepo.Get(ctx, jobID)
+}
+
+// MarkJobProcessing transitions a job to the processing state.
+func (s *enrichmentService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
+	return s.jobRepo.MarkProcessing(ctx, jobID)
 }
 
 // ClaimNextJob atomically claims the next pending enrichment job.

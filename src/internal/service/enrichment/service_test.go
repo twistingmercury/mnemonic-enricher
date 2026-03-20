@@ -593,6 +593,70 @@ func assertExpectations(t *testing.T, deps *testDeps) {
 	deps.chunkRepo.AssertExpectations(t)
 }
 
+// ---------- GetJob ----------
+
+func TestGetJob(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns job when found", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		job := testJob()
+		deps.jobRepo.On("Get", mock.Anything, testJobID).Return(job, nil)
+
+		result, err := svc.GetJob(context.Background(), testJobID)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, testJobID, result.ID)
+		assertExpectations(t, deps)
+	})
+
+	t.Run("propagates not-found error", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("Get", mock.Anything, testJobID).Return(nil, enrichmentjob.ErrNotFound)
+
+		result, err := svc.GetJob(context.Background(), testJobID)
+
+		require.ErrorIs(t, err, enrichmentjob.ErrNotFound)
+		assert.Nil(t, result)
+		assertExpectations(t, deps)
+	})
+}
+
+// ---------- MarkJobProcessing ----------
+
+func TestMarkJobProcessing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns nil on success", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("MarkProcessing", mock.Anything, testJobID).Return(nil)
+
+		err := svc.MarkJobProcessing(context.Background(), testJobID)
+
+		require.NoError(t, err)
+		assertExpectations(t, deps)
+	})
+
+	t.Run("propagates not-found error", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("MarkProcessing", mock.Anything, testJobID).Return(enrichmentjob.ErrNotFound)
+
+		err := svc.MarkJobProcessing(context.Background(), testJobID)
+
+		require.ErrorIs(t, err, enrichmentjob.ErrNotFound)
+		assertExpectations(t, deps)
+	})
+}
+
 // ---------- ClaimNextJob ----------
 
 func TestClaimNextJob(t *testing.T) {

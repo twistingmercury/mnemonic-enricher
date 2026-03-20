@@ -47,6 +47,14 @@ func (s *concurrentService) CleanupFailedJobs(_ context.Context) (int64, error) 
 	return 0, nil
 }
 
+func (s *concurrentService) GetJob(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
+	return nil, nil
+}
+
+func (s *concurrentService) MarkJobProcessing(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
 // mockService implements enrichmentsvc.Service for testing.
 type mockService struct {
 	mock.Mock
@@ -76,6 +84,16 @@ func (m *mockService) CleanupCompletedJobs(ctx context.Context) (int64, error) {
 func (m *mockService) CleanupFailedJobs(ctx context.Context) (int64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
+	args := m.Called(ctx, jobID)
+	job, _ := args.Get(0).(*enrichmentjob.Job)
+	return job, args.Error(1)
+}
+
+func (m *mockService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
+	return m.Called(ctx, jobID).Error(0)
 }
 
 // testConfig returns an EnrichmentConfig with fast intervals for testing.
