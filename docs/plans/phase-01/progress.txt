@@ -179,3 +179,37 @@ Outcome: All three exited 0; no errors
 Notes: LSP BrokenImport/workspace warnings are editor tooling false-positives
 (same issue as prior cycles — LSP pointed at project root, not src/).
 Go toolchain passed cleanly.
+
+## Cycle 9 - Update README.md, CHANGELOG.md, and Makefile
+Date: 2026-03-20
+Commit: 1dd021c
+Tag: v0.0.1-cycle09
+
+Summary:
+- Rewrote README.md to describe mnemonic-enricher as a standalone enrichment
+  worker; removed all references to agents, patterns, skills, skillfiles, MCP,
+  and the old Admin REST API; documented queue abstraction, RabbitMQ provider,
+  all MNEMONIC_QUEUE_* / DATABASE_* / OPENAI_* env vars, make build, and
+  docker compose up getting-started
+- Rewrote CHANGELOG.md from scratch following Keep a Changelog format; single
+  [0.1.0] entry dated 2026-03-20 documenting the extraction from the monolith
+  and queue-driven enrichment refactor
+- Cleaned up Makefile: removed tests-db, tests-db-agent, tests-db-pattern,
+  tests-e2e, docs-swagger targets; fixed all Go commands to run from src/;
+  fixed build target to call src/build/build.sh; updated .PHONY list
+- Fixed src/build/Dockerfile: COPY destination was /out/mnemonic (stale name),
+  corrected to /out/mnemonic-enricher to match binary name and ENTRYPOINT
+- Fixed src/build/build.sh: updated e2e service names (postgres→e2e_postgres,
+  neo4j→e2e_neo4j; added e2e_rabbitmq); removed stale migrate step; updated
+  --exit-code-from to e2e_tests; updated up target to e2e_api e2e_tests
+- Fixed src/tests/docker-compose.yaml: NEO4J_AUTH used invalid username
+  'e2e_neo4j'; changed to 'neo4j' as required; updated healthcheck to match
+
+Verification: make build (from project root)
+Outcome: Exited 0 — Docker image built, all unit tests passed, all e2e tests
+passed (12 pass, 1 skip)
+
+Notes: Three pre-existing build infrastructure bugs (Dockerfile stale path,
+build.sh stale service names, neo4j invalid auth) were fixed as they were
+directly required to make the Cycle 9 verify command pass. These bugs predated
+Cycle 9 and were not caught by prior cycles which used go build/test directly.

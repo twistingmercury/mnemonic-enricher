@@ -152,7 +152,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./...`
   - Done: `go test ./...` exits 0; no references to deleted packages remain in doc comments or e2e helpers
 
-- [ ] **Cycle 9 - Update README.md, CHANGELOG.md, and Makefile**: Rewrite README.md and CHANGELOG.md to reflect the enricher as a new standalone project; update the Makefile to remove stale targets and document the current build/run workflow.
+- [x] **Cycle 9 - Update README.md, CHANGELOG.md, and Makefile**: Rewrite README.md and CHANGELOG.md to reflect the enricher as a new standalone project; update the Makefile to remove stale targets and document the current build/run workflow.
   - Agent: `technical writer`
   - Files: `README.md`, `CHANGELOG.md`, `Makefile`
   - Steps:
