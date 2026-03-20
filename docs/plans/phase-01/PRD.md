@@ -62,7 +62,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
 
 ## Implementation Plan
 
-- [ ] **Cycle 1 - Fix module path and remove routes.go**: Replace all remaining `github.com/twistingmercury/mnemonic/` import prefixes with `github.com/twistingmercury/mnemonic-enricher/` across all Go source files; delete `internal/server/routes.go` and remove its call site from `server.go` so the project compiles cleanly.
+- [x] **Cycle 1 - Fix module path and remove routes.go**: Replace all remaining `github.com/twistingmercury/mnemonic/` import prefixes with `github.com/twistingmercury/mnemonic-enricher/` across all Go source files; delete `internal/server/routes.go` and remove its call site from `server.go` so the project compiles cleanly.
   - Agent: `go software engineer`
   - Files: `src/internal/server/server.go`, `src/internal/server/routes.go` (delete), all `.go` files with old import prefix
   - Steps:

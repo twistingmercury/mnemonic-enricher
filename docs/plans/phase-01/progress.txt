@@ -1,0 +1,16 @@
+## Cycle 1 - Fix module path and remove routes.go
+Date: 2026-03-20
+Commit: d8116f9
+Tag: v0.0.1-cycle01
+
+Summary:
+- Replaced all github.com/twistingmercury/mnemonic/ import prefixes with
+  github.com/twistingmercury/mnemonic-enricher/ across 71 Go source files
+- Deleted src/internal/server/routes.go
+- Removed RegisterAPIRoutes call site from server.go
+- Moved Services struct definition inline into server.go
+
+Verification: cd src && go build ./... && go vet ./...
+Outcome: Both exited 0 with no errors
+
+Notes: None — clean cycle, no follow-up issues.
