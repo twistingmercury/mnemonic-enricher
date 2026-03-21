@@ -28,8 +28,8 @@ import (
 // concurrentService is a hand-written mock for tests that need dynamic return
 // values. GetJob and ProcessJob are set via function fields.
 type concurrentService struct {
-	getJobFunc   func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
-	processFunc  func(ctx context.Context, job *enrichmentjob.Job) error
+	getJobFunc  func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
+	processFunc func(ctx context.Context, job *enrichmentjob.Job) error
 }
 
 func (s *concurrentService) GetJob(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {

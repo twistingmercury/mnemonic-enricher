@@ -117,8 +117,9 @@ func TestEnrichmentPipeline_OpenAIFailure(t *testing.T) {
 	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID, patternID)
 
 	driver := helpers.NewNeo4jDriver(t)
-	defer driver.Close(context.Background())
-
+	t.Cleanup(func() {
+		_ = driver.Close(context.Background())
+	})
 	t.Cleanup(func() {
 		helpers.CleanupPattern(t, pool, patternID)
 	})

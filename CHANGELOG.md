@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-21
+
+### Added
+
+- E2E test suite for enrichment pipeline (`tests/e2e/pipeline/`) validating happy path, malformed message, job-not-found, and OpenAI failure scenarios against a live Docker Compose environment
+- OpenAI HTTP stub (`tests/e2e/openai-stub/`) serving deterministic embeddings and chat completions for E2E tests, with a `/control/fail-next` endpoint to simulate API failures
+- Neo4j helper (`tests/e2e/helpers/neo4j.go`) for asserting graph node existence and cleaning up test data
+- AMQP helper (`tests/e2e/helpers/amqp.go`) for publishing enrichment job messages to RabbitMQ during E2E tests
+- Database helpers (`tests/e2e/helpers/db.go`) for seeding patterns, chunks, and enrichment jobs, and for polling job status
+
+### Fixed
+
+- OpenAI embedding and extraction services now correctly append `/embeddings` and `/chat/completions` path suffixes to `cfg.BaseURL`, so that stub and production URLs are constructed correctly from the base URL configured via `MNEMONIC_OPENAI_BASE_URL`
+- Docker Compose E2E configuration (`tests/docker-compose.yaml`): enricher now waits for Postgres and Neo4j to be healthy before starting, preventing connection errors on slow infra startup
+- OpenAI stub `fail-next` counter uses a decrement-based mechanism so that all embedding retry attempts within a single operation fail, matching the test intent of simulating a fully unavailable API
+
 ## [0.1.0] - 2026-03-20
 
 ### Added

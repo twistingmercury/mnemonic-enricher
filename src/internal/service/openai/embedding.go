@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
@@ -43,7 +44,7 @@ type openaiEmbedding struct {
 func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
 	baseURL := embeddingsEndpoint
 	if cfg.BaseURL != "" {
-		baseURL = cfg.BaseURL
+		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/embeddings"
 	}
 	return &openaiEmbedding{
 		client:     &http.Client{Timeout: 30 * time.Second},

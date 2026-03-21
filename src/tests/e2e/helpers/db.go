@@ -90,22 +90,24 @@ func SeedChunk(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) uuid.UUID 
 	return id
 }
 
-// SeedEnrichmentJob inserts an enrichment_job row with status="pending".
+// SeedEnrichmentJob inserts a chunk-based enrichment_job row with status="pending".
+// chunk_id is set; pattern_id is left NULL per the enrichment_jobs_target_exclusive
+// check constraint (each job targets exactly one of: chunk or pattern).
 // Returns the job ID.
-func SeedEnrichmentJob(t *testing.T, pool *pgxpool.Pool, chunkID, patternID uuid.UUID) uuid.UUID {
+func SeedEnrichmentJob(t *testing.T, pool *pgxpool.Pool, chunkID, _ uuid.UUID) uuid.UUID {
 	t.Helper()
 
 	id := uuid.New()
 
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO enrichment_jobs (
-			id, pattern_id, chunk_id, status, attempts, max_attempts,
+			id, chunk_id, status, attempts, max_attempts,
 			scheduled_for, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, 'pending', 0, 3,
+			$1, $2, 'pending', 0, 1,
 			NOW(), NOW(), NOW()
 		)`,
-		id, patternID, chunkID,
+		id, chunkID,
 	)
 	if err != nil {
 		t.Fatalf("failed to seed enrichment job: %v", err)

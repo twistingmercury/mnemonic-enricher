@@ -129,7 +129,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `cd src/tests/e2e && go build ./pipeline/...`
   - Done: `go build ./pipeline/...` exits 0; three unhappy path tests exist in `enrichment_test.go`
 
-- [ ] **Cycle 8 - Full E2E verification and CHANGELOG update**: Run the complete CI pipeline to confirm all operational and pipeline tests pass against the enricher; update `CHANGELOG.md` to record the phase-02 release.
+- [x] **Cycle 8 - Full E2E verification and CHANGELOG update**: Run the complete CI pipeline to confirm all operational and pipeline tests pass against the enricher; update `CHANGELOG.md` to record the phase-02 release.
   - Agent: `devops engineer`
   - Files: `CHANGELOG.md`
   - Steps:

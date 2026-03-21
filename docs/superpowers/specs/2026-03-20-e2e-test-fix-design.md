@@ -152,6 +152,25 @@ No agent seeding required — `GetAgentAssociations` returns an empty slice for 
 3. **Neo4j Pattern node**: `MATCH (p:Pattern {id: $id}) RETURN p` — assert node exists.
 4. **Neo4j Concept nodes**: `MATCH (c:Concept)-[:MENTIONED_IN]->(p:Pattern {id: $id}) RETURN c` — assert at least one concept node exists with a `MENTIONED_IN` edge.
 
+#### Unhappy path tests (`pipeline/enrichment_test.go`, continued)
+
+These tests verify failure behavior treating the system as a black box.
+
+**Malformed message** — publish a body that is not valid JSON (e.g., `not-json`). Assert:
+- The message is not requeued (RabbitMQ queue depth does not grow)
+- No job row transitions out of its original state
+
+**Job not found** — publish `{"job_id": "<uuid-that-does-not-exist>"}`. Assert:
+- No panic or crash (enricher `/health` still returns 200 after)
+- The queue drains (message is nacked and not requeued)
+
+**OpenAI failure** — configure the stub to return `500` for `/v1/embeddings` on demand (via a control endpoint or by running a second stub variant). Seed a valid chunk job, publish it. Assert:
+- Postgres `enrichment_jobs.status = failed` (within poll timeout)
+- `last_error` is non-empty
+- No Neo4j nodes created for this pattern ID
+
+The OpenAI stub should expose a `POST /control/fail-next` endpoint that causes the next embeddings call to return `500`, then resets. This avoids needing a second stub image.
+
 #### New helpers (`helpers/`)
 
 | File       | Purpose                                                                |
@@ -164,7 +183,6 @@ Existing `helpers.go` trimmed to remove dead `UserID`, `TeamID`, `UserRoles`, `R
 
 ## Out of Scope
 
-- Unhappy path pipeline tests (malformed message, job not found) — covered by unit tests
 - Load or concurrency testing
-- OpenAI rate-limit or retry simulation
+- OpenAI rate-limit simulation
 - Agent-to-pattern graph edge assertions (agent seeding adds complexity; graph sync skips cleanly with no associations)

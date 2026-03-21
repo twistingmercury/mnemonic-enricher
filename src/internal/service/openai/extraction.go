@@ -59,7 +59,7 @@ type openaiExtraction struct {
 func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
 	baseURL := chatCompletionsEndpoint
 	if cfg.BaseURL != "" {
-		baseURL = cfg.BaseURL
+		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
 	}
 	return &openaiExtraction{
 		client:     &http.Client{Timeout: 60 * time.Second},

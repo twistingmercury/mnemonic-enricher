@@ -25,7 +25,8 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
 		return
 	}
-	if atomic.CompareAndSwapInt32(&failNext, 1, 0) {
+	if current := atomic.LoadInt32(&failNext); current > 0 {
+		atomic.AddInt32(&failNext, -1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"forced failure"}`))
@@ -110,8 +111,8 @@ func handleFailNext(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	atomic.StoreInt32(&failNext, 1)
-	w.WriteHeader(http.StatusNoContent)
+	atomic.StoreInt32(&failNext, 10)
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
