@@ -17,6 +17,9 @@ import (
 // ErrExtractionFailed is returned when concept extraction fails after all retries.
 var ErrExtractionFailed = errors.New("concept extraction failed")
 
+// ErrEmptyExtractionResponse is returned when the API returns no choices.
+var ErrEmptyExtractionResponse = errors.New("empty chat response: no choices returned")
+
 // Concept represents an entity extracted from pattern content.
 type Concept struct {
 	Name string `json:"name"` // Normalized to lowercase.
@@ -55,12 +58,7 @@ type openaiExtraction struct {
 	retryDelay time.Duration
 }
 
-// NewExtractionService creates an ExtractionService backed by the OpenAI chat completions API.
-func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
-	baseURL := chatCompletionsEndpoint
-	if cfg.BaseURL != "" {
-		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
-	}
+func newOpenAIExtraction(cfg config.OpenAIConfig, baseURL string) *openaiExtraction {
 	return &openaiExtraction{
 		client:     &http.Client{Timeout: 60 * time.Second},
 		baseURL:    baseURL,
@@ -71,12 +69,19 @@ func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
 	}
 }
 
+// NewExtractionService creates an ExtractionService backed by the OpenAI chat completions API.
+func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
+	baseURL := chatCompletionsEndpoint
+	if cfg.BaseURL != "" {
+		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
+	}
+	return newOpenAIExtraction(cfg, baseURL)
+}
+
 // newExtractionServiceWithURL creates an ExtractionService pointing at a custom URL.
 // This is used for testing with httptest servers.
 func newExtractionServiceWithURL(cfg config.OpenAIConfig, baseURL string) ExtractionService {
-	svc := NewExtractionService(cfg).(*openaiExtraction)
-	svc.baseURL = baseURL
-	return svc
+	return newOpenAIExtraction(cfg, baseURL)
 }
 
 // chatRequest is the OpenAI chat completions API request body.
@@ -113,7 +118,7 @@ func (e *openaiExtraction) Extract(ctx context.Context, text string) ([]Concept,
 
 	for attempt := range e.retries + 1 {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrExtractionFailed, err)
+			return nil, fmt.Errorf("%w: %w", ErrExtractionFailed,err)
 		}
 
 		concepts, err := e.doExtract(ctx, text)
@@ -126,13 +131,13 @@ func (e *openaiExtraction) Extract(ctx context.Context, text string) ([]Concept,
 		if attempt < e.retries {
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("%w: %v", ErrExtractionFailed, ctx.Err())
+				return nil, fmt.Errorf("%w: %w", ErrExtractionFailed,ctx.Err())
 			case <-time.After(e.retryDelay):
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %v", ErrExtractionFailed, lastErr)
+	return nil, fmt.Errorf("%w: %w", ErrExtractionFailed,lastErr)
 }
 
 // doExtract performs a single extraction API call.
@@ -178,7 +183,7 @@ func (e *openaiExtraction) doExtract(ctx context.Context, text string) ([]Concep
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty chat response: no choices returned")
+		return nil, ErrEmptyExtractionResponse
 	}
 
 	content := chatResp.Choices[0].Message.Content

@@ -689,10 +689,11 @@ func (c *OpenAIConfig) validate() ValidationErrors {
 	}
 
 	if c.BaseURL != "" {
-		if _, err := url.Parse(c.BaseURL); err != nil {
+		u, err := url.Parse(c.BaseURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
 			errs = append(errs, ValidationError{
 				Field:   "openai.base_url",
-				Message: fmt.Sprintf("must be a valid URL: %v", err),
+				Message: fmt.Sprintf("must be an absolute URL with scheme and host, got %q", c.BaseURL),
 			})
 		}
 	}

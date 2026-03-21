@@ -17,6 +17,9 @@ import (
 // ErrEmbeddingFailed is returned when embedding generation fails after all retries.
 var ErrEmbeddingFailed = errors.New("embedding generation failed")
 
+// ErrEmptyEmbeddingResponse is returned when the API returns no embedding data.
+var ErrEmptyEmbeddingResponse = errors.New("empty embedding response")
+
 // EmbeddingService generates vector embeddings from text.
 // MVP implementation calls OpenAI text-embedding-3-large.
 type EmbeddingService interface {
@@ -40,12 +43,7 @@ type openaiEmbedding struct {
 	retryDelay time.Duration
 }
 
-// NewEmbeddingService creates an EmbeddingService backed by the OpenAI embeddings API.
-func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
-	baseURL := embeddingsEndpoint
-	if cfg.BaseURL != "" {
-		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/embeddings"
-	}
+func newOpenAIEmbedding(cfg config.OpenAIConfig, baseURL string) *openaiEmbedding {
 	return &openaiEmbedding{
 		client:     &http.Client{Timeout: 30 * time.Second},
 		baseURL:    baseURL,
@@ -57,12 +55,19 @@ func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
 	}
 }
 
+// NewEmbeddingService creates an EmbeddingService backed by the OpenAI embeddings API.
+func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
+	baseURL := embeddingsEndpoint
+	if cfg.BaseURL != "" {
+		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/embeddings"
+	}
+	return newOpenAIEmbedding(cfg, baseURL)
+}
+
 // newEmbeddingServiceWithURL creates an EmbeddingService pointing at a custom URL.
 // This is used for testing with httptest servers.
 func newEmbeddingServiceWithURL(cfg config.OpenAIConfig, baseURL string) EmbeddingService {
-	svc := NewEmbeddingService(cfg).(*openaiEmbedding)
-	svc.baseURL = baseURL
-	return svc
+	return newOpenAIEmbedding(cfg, baseURL)
 }
 
 // embeddingRequest is the OpenAI embeddings API request body.
@@ -85,7 +90,7 @@ func (e *openaiEmbedding) Embed(ctx context.Context, text string) ([]float32, er
 
 	for attempt := range e.retries + 1 {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrEmbeddingFailed, err)
+			return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,err)
 		}
 
 		embedding, err := e.doEmbed(ctx, text)
@@ -98,13 +103,13 @@ func (e *openaiEmbedding) Embed(ctx context.Context, text string) ([]float32, er
 		if attempt < e.retries {
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("%w: %v", ErrEmbeddingFailed, ctx.Err())
+				return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,ctx.Err())
 			case <-time.After(e.retryDelay):
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %v", ErrEmbeddingFailed, lastErr)
+	return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,lastErr)
 }
 
 // doEmbed performs a single embedding API call.
@@ -148,7 +153,7 @@ func (e *openaiEmbedding) doEmbed(ctx context.Context, text string) ([]float32, 
 	}
 
 	if len(embResp.Data) == 0 {
-		return nil, fmt.Errorf("empty embedding response")
+		return nil, ErrEmptyEmbeddingResponse
 	}
 
 	return embResp.Data[0].Embedding, nil

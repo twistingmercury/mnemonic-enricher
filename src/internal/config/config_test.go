@@ -1714,3 +1714,24 @@ func TestOpenAIBaseURL_ValidateAcceptsValidURL(t *testing.T) {
 		assert.NotEqual(t, "openai.base_url", e.Field)
 	}
 }
+
+func TestOpenAIBaseURL_ValidateRejectsBareString(t *testing.T) {
+	clearMnemonicEnvVars(t)
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.Set("openai.base_url", "not-a-url")
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	errs := cfg.Validate()
+	found := false
+	for _, e := range errs {
+		if e.Field == "openai.base_url" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected validation error for openai.base_url with bare string %q", "not-a-url")
+}

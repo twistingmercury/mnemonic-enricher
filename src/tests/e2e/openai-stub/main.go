@@ -33,7 +33,7 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	embedding := make([]float64, 2000)
+	embedding := make([]float32, 2000)
 	for i := range embedding {
 		embedding[i] = 0.1
 	}
@@ -41,7 +41,7 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	type embeddingItem struct {
 		Object    string    `json:"object"`
 		Index     int       `json:"index"`
-		Embedding []float64 `json:"embedding"`
+		Embedding []float32 `json:"embedding"`
 	}
 	type usage struct {
 		PromptTokens int `json:"prompt_tokens"`

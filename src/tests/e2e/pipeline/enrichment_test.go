@@ -17,7 +17,7 @@ func TestEnrichmentPipeline_HappyPath(t *testing.T) {
 
 	patternID := helpers.SeedPattern(t, pool)
 	chunkID := helpers.SeedChunk(t, pool, patternID)
-	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID, patternID)
+	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
 
 	t.Cleanup(func() {
 		helpers.CleanupPattern(t, pool, patternID)
@@ -45,25 +45,30 @@ func TestEnrichmentPipeline_HappyPath(t *testing.T) {
 	helpers.AssertConceptNodesExist(t, driver, patternID)
 }
 
+func pollHealthOK(t *testing.T, enricherURL string) {
+	t.Helper()
+	for i := 0; i < 10; i++ {
+		resp, err := http.Get(enricherURL + "/health")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			return
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Fatalf("enricher health check at %s did not return 200 after 3s", enricherURL)
+}
+
 func TestEnrichmentPipeline_MalformedMessage(t *testing.T) {
 	helpers.PublishRaw(t, []byte("not-json"))
-
-	time.Sleep(2 * time.Second)
 
 	enricherURL := os.Getenv("ENRICHER_URL")
 	if enricherURL == "" {
 		enricherURL = "http://localhost:8080"
 	}
-
-	resp, err := http.Get(enricherURL + "/health")
-	if err != nil {
-		t.Fatalf("failed to GET %s/health: %v", enricherURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected health endpoint status 200, got %d", resp.StatusCode)
-	}
+	pollHealthOK(t, enricherURL)
 }
 
 func TestEnrichmentPipeline_JobNotFound(t *testing.T) {
@@ -71,22 +76,11 @@ func TestEnrichmentPipeline_JobNotFound(t *testing.T) {
 
 	helpers.PublishJob(t, randomJobID)
 
-	time.Sleep(2 * time.Second)
-
 	enricherURL := os.Getenv("ENRICHER_URL")
 	if enricherURL == "" {
 		enricherURL = "http://localhost:8080"
 	}
-
-	resp, err := http.Get(enricherURL + "/health")
-	if err != nil {
-		t.Fatalf("failed to GET %s/health: %v", enricherURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected health endpoint status 200, got %d", resp.StatusCode)
-	}
+	pollHealthOK(t, enricherURL)
 }
 
 func TestEnrichmentPipeline_OpenAIFailure(t *testing.T) {
@@ -114,7 +108,7 @@ func TestEnrichmentPipeline_OpenAIFailure(t *testing.T) {
 	pool := helpers.NewPGConn(t)
 	patternID := helpers.SeedPattern(t, pool)
 	chunkID := helpers.SeedChunk(t, pool, patternID)
-	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID, patternID)
+	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
 
 	driver := helpers.NewNeo4jDriver(t)
 	t.Cleanup(func() {

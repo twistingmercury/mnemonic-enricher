@@ -37,6 +37,7 @@ func NewPGConn(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("failed to ping postgres: %v", err)
 	}
 
+	t.Cleanup(pool.Close)
 	return pool
 }
 
@@ -48,7 +49,10 @@ func SeedPattern(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	id := uuid.New()
 	name := fmt.Sprintf("test-pattern-%s", uuid.New())
 
-	_, err := pool.Exec(context.Background(), `
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := pool.Exec(ctx, `
 		INSERT INTO patterns (
 			id, name, description, content, tags, entity_type, language, domain,
 			version, related_patterns, enrichment_status, created_at, updated_at
@@ -73,7 +77,10 @@ func SeedChunk(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) uuid.UUID 
 
 	id := uuid.New()
 
-	_, err := pool.Exec(context.Background(), `
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := pool.Exec(ctx, `
 		INSERT INTO pattern_chunks (
 			id, pattern_id, section_title, chunk_index, content,
 			enrichment_status, created_at, updated_at
@@ -94,12 +101,15 @@ func SeedChunk(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) uuid.UUID 
 // chunk_id is set; pattern_id is left NULL per the enrichment_jobs_target_exclusive
 // check constraint (each job targets exactly one of: chunk or pattern).
 // Returns the job ID.
-func SeedEnrichmentJob(t *testing.T, pool *pgxpool.Pool, chunkID, _ uuid.UUID) uuid.UUID {
+func SeedEnrichmentJob(t *testing.T, pool *pgxpool.Pool, chunkID uuid.UUID) uuid.UUID {
 	t.Helper()
 
 	id := uuid.New()
 
-	_, err := pool.Exec(context.Background(), `
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := pool.Exec(ctx, `
 		INSERT INTO enrichment_jobs (
 			id, chunk_id, status, attempts, max_attempts,
 			scheduled_for, created_at, updated_at
@@ -120,7 +130,10 @@ func SeedEnrichmentJob(t *testing.T, pool *pgxpool.Pool, chunkID, _ uuid.UUID) u
 func CleanupPattern(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) {
 	t.Helper()
 
-	_, err := pool.Exec(context.Background(),
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := pool.Exec(ctx,
 		`DELETE FROM patterns WHERE id = $1`,
 		patternID,
 	)
@@ -135,16 +148,21 @@ func CleanupPattern(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) {
 func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) string {
 	t.Helper()
 
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
+			return ""
+		default:
+		}
+
 		var status string
 		var lastError *string
-
-		err := pool.QueryRow(context.Background(),
-			`SELECT status, last_error FROM enrichment_jobs WHERE id = $1`,
-			jobID,
-		).Scan(&status, &lastError)
+		err := pool.QueryRow(ctx, `SELECT status, last_error FROM enrichment_jobs WHERE id = $1`, jobID).
+			Scan(&status, &lastError)
 		if err != nil {
 			t.Fatalf("failed to query job status for %s: %v", jobID, err)
 		}
@@ -162,9 +180,6 @@ func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout ti
 
 		time.Sleep(500 * time.Millisecond)
 	}
-
-	t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
-	return ""
 }
 
 // PollJobStatusRaw polls enrichment_jobs until status is "completed" or "failed"
@@ -173,16 +188,21 @@ func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout ti
 func PollJobStatusRaw(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) (string, string) {
 	t.Helper()
 
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
+			return "", ""
+		default:
+		}
+
 		var status string
 		var lastError *string
-
-		err := pool.QueryRow(context.Background(),
-			`SELECT status, last_error FROM enrichment_jobs WHERE id = $1`,
-			jobID,
-		).Scan(&status, &lastError)
+		err := pool.QueryRow(ctx, `SELECT status, last_error FROM enrichment_jobs WHERE id = $1`, jobID).
+			Scan(&status, &lastError)
 		if err != nil {
 			t.Fatalf("failed to query job status for %s: %v", jobID, err)
 		}
@@ -197,17 +217,17 @@ func PollJobStatusRaw(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout
 
 		time.Sleep(500 * time.Millisecond)
 	}
-
-	t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
-	return "", ""
 }
 
 // AssertChunkEmbeddingSet asserts that the chunk's embedding column is NOT NULL.
 func AssertChunkEmbeddingSet(t *testing.T, pool *pgxpool.Pool, chunkID uuid.UUID) {
 	t.Helper()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var embeddingSet bool
-	err := pool.QueryRow(context.Background(),
+	err := pool.QueryRow(ctx,
 		`SELECT embedding IS NOT NULL FROM pattern_chunks WHERE id = $1`,
 		chunkID,
 	).Scan(&embeddingSet)

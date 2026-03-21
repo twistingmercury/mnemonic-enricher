@@ -54,10 +54,10 @@ func PublishJob(t *testing.T, jobID uuid.UUID) {
 	body := fmt.Sprintf(`{"job_id":"%s"}`, jobID.String())
 
 	err = ch.Publish(
-		"",             // exchange (default)
+		"",              // exchange (default)
 		enrichmentQueue, // routing key
-		false,          // mandatory
-		false,          // immediate
+		false,           // mandatory
+		false,           // immediate
 		amqp.Publishing{
 			ContentType:  "application/json",
 			Body:         []byte(body),
