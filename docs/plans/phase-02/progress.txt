@@ -103,3 +103,40 @@ Summary:
 Verification: make build (from project root)
 Outcome: PASS — make build exits 0; all 4 pipeline tests and 11 operational tests pass
 Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04-p2cycle05-p2cycle06-p2cycle07-p2cycle08
+
+## Cycle 9 - Code review and fix critical/high/medium issues
+Date: 2026-03-20
+Summary:
+  - Ran 3-agent parallel review: code reviewer (tactical), go software architect (Go idioms),
+    solutions architect (architecture)
+  - 3 HIGH findings fixed:
+    * G2: Replaced type assertions in newEmbeddingServiceWithURL/newExtractionServiceWithURL with
+      private newOpenAIEmbedding/newOpenAIExtraction constructors
+    * G5/A1: Strengthened BaseURL validation to require scheme+host (bare strings like "not-a-url"
+      now rejected); added TestOpenAIBaseURL_ValidateRejectsBareString
+    * A3: Removed unused patternID blank-identifier parameter from SeedEnrichmentJob; updated
+      all call sites
+  - 7 MEDIUM findings fixed:
+    * G3: Changed fmt.Errorf("%w: %v", ...) to "%w: %w" for full error chain in retry errors
+    * G4: Defined ErrEmptyEmbeddingResponse and ErrEmptyExtractionResponse sentinels
+    * G6: PollJobStatus/PollJobStatusRaw now use context.WithTimeout for DB queries
+    * G7: All seed/cleanup DB helpers now use 5-second timeout contexts
+    * G8: NewPGConn now registers t.Cleanup(pool.Close) to prevent connection leaks
+    * A4: Replaced time.Sleep(2s) in malformed/not-found tests with pollHealthOK retry helper
+    * A6/G13: Stub embedding vector changed from []float64 to []float32 to match consumer
+  - 8 LOW findings left as notes (G1, A2, A5, A7, A8, A9, A10, A11) — see progress log and
+    code review document for details
+  - Created docs/code-reviews/phase-02-e2e-test-overhaul.md
+Verification: cd src && go vet ./... && go build ./... && cd tests/e2e && go vet ./... && go build ./...
+Outcome: PASS — all vet and build commands exit 0; go test ./internal/config/... ./internal/service/openai/... PASS
+Tag: v0.0.1-cycle09-p2cycle01-p2cycle02-p2cycle03-p2cycle04-p2cycle05-p2cycle06-p2cycle07-p2cycle08-p2cycle09
+Low findings left as notes:
+  - G1: EmbeddingService/ExtractionService interfaces defined in implementing package (pre-existing,
+    out of phase-02 scope; move to Phase 03)
+  - A2: failNext=10 (intentional Cycle 8 fix; ensures all retry attempts fail)
+  - A5: PollJobStatus naming (fatals on failure; rename deferred to Phase 03)
+  - A7: t.Cleanup registration order counter-intuitive (execution order is correct)
+  - A8: Queue name hardcoded in amqp.go (must match DefaultRabbitMQQueue)
+  - A9: Enricher image name hardcoded in compose (parameterize in Phase 03)
+  - A10: Dockerfile missing CGO_ENABLED=0 (low risk in alpine builder)
+  - A11: os.Getenv("ENRICHER_URL") duplicated in test file (partially mitigated by pollHealthOK)

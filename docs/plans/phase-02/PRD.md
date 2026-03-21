@@ -138,7 +138,7 @@ The existing E2E tests have three critical defects. All tests target `e2e_api` (
   - Verify: `make build`
   - Done: `make build` exits 0; `CHANGELOG.md` contains a `[0.2.0]` entry
 
-- [ ] **Cycle 9 - Code review and fix critical/high/medium issues**: Run a full code review across all phase-02 changes; fix every critical, high, and medium finding; verify the build is clean after fixes.
+- [x] **Cycle 9 - Code review and fix critical/high/medium issues**: Run a full code review across all phase-02 changes; fix every critical, high, and medium finding; verify the build is clean after fixes.
   - Agent: `code reviewer`
   - Files: all files created or modified in Cycles 1–8
   - Steps:
