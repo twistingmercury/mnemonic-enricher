@@ -45,42 +45,62 @@ func TestEnrichmentPipeline_HappyPath(t *testing.T) {
 	helpers.AssertConceptNodesExist(t, driver, patternID)
 }
 
-func pollHealthOK(t *testing.T, enricherURL string) {
-	t.Helper()
-	for i := 0; i < 10; i++ {
-		resp, err := http.Get(enricherURL + "/health")
-		if err == nil && resp.StatusCode == http.StatusOK {
-			_ = resp.Body.Close()
-			return
-		}
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-	t.Fatalf("enricher health check at %s did not return 200 after 3s", enricherURL)
-}
-
+// TestEnrichmentPipeline_MalformedMessage verifies the worker continues
+// processing valid jobs after receiving a message that is not valid JSON.
+// A worker that deadlocks or exits after bad input would fail to complete
+// the real job published below.
 func TestEnrichmentPipeline_MalformedMessage(t *testing.T) {
+	// Publish invalid JSON to the queue first.
 	helpers.PublishRaw(t, []byte("not-json"))
 
-	enricherURL := os.Getenv("ENRICHER_URL")
-	if enricherURL == "" {
-		enricherURL = "http://localhost:8080"
+	// Seed a real job and verify the worker picks it up and completes it.
+	pool := helpers.NewPGConn(t)
+	patternID := helpers.SeedPattern(t, pool)
+	chunkID := helpers.SeedChunk(t, pool, patternID)
+	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
+
+	driver := helpers.NewNeo4jDriver(t)
+	t.Cleanup(func() { _ = driver.Close(context.Background()) })
+	t.Cleanup(func() { helpers.CleanupPatternGraph(t, driver, patternID) })
+	t.Cleanup(func() { helpers.CleanupPattern(t, pool, patternID) })
+
+	helpers.PublishJob(t, jobID)
+
+	status := helpers.PollJobStatus(t, pool, jobID, 30*time.Second)
+	if status != "completed" {
+		t.Fatalf("expected job status %q after malformed message, got %q", "completed", status)
 	}
-	pollHealthOK(t, enricherURL)
+
+	helpers.AssertChunkEmbeddingSet(t, pool, chunkID)
 }
 
+// TestEnrichmentPipeline_JobNotFound verifies the worker continues processing
+// valid jobs after receiving a job ID that has no corresponding database row.
+// A worker that stalls on lookup errors would fail to complete the real job
+// published below.
 func TestEnrichmentPipeline_JobNotFound(t *testing.T) {
-	randomJobID := uuid.New()
+	// Publish a random UUID — no row exists in enrichment_jobs for this ID.
+	helpers.PublishJob(t, uuid.New())
 
-	helpers.PublishJob(t, randomJobID)
+	// Seed a real job and verify the worker picks it up and completes it.
+	pool := helpers.NewPGConn(t)
+	patternID := helpers.SeedPattern(t, pool)
+	chunkID := helpers.SeedChunk(t, pool, patternID)
+	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
 
-	enricherURL := os.Getenv("ENRICHER_URL")
-	if enricherURL == "" {
-		enricherURL = "http://localhost:8080"
+	driver := helpers.NewNeo4jDriver(t)
+	t.Cleanup(func() { _ = driver.Close(context.Background()) })
+	t.Cleanup(func() { helpers.CleanupPatternGraph(t, driver, patternID) })
+	t.Cleanup(func() { helpers.CleanupPattern(t, pool, patternID) })
+
+	helpers.PublishJob(t, jobID)
+
+	status := helpers.PollJobStatus(t, pool, jobID, 30*time.Second)
+	if status != "completed" {
+		t.Fatalf("expected job status %q after unknown job ID, got %q", "completed", status)
 	}
-	pollHealthOK(t, enricherURL)
+
+	helpers.AssertChunkEmbeddingSet(t, pool, chunkID)
 }
 
 func TestEnrichmentPipeline_OpenAIFailure(t *testing.T) {
