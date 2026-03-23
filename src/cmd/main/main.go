@@ -20,12 +20,6 @@ import (
 var verFlag = pflag.Bool("version", false, "Displays current version information for mnemonic")
 var healthFlag = pflag.Bool("health", false, "Get the current health of the service")
 
-// @title Mnemonic API
-// @version 1.0
-// @description REST API for the Mnemonic agent-pattern-skill management service
-// @host localhost:8080
-// @BasePath /v1/api
-// @schemes http
 func main() {
 	pflag.Parse()
 

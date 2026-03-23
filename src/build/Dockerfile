@@ -18,10 +18,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-# Generate Swagger 2.0 docs (required before linters/build — routes.go imports the generated package)
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-RUN swag init -g cmd/main/main.go -o docs/swagger --parseInternal
-
 # Run linters, formatters, security scanners, etc
 RUN goimports -w .
 RUN golangci-lint run
