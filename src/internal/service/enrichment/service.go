@@ -18,13 +18,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	enrichmentjob "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
 // errPipelineFailed is a sentinel returned by runGraphPipeline when a pipeline
@@ -35,9 +35,13 @@ var errPipelineFailed = errors.New("pipeline step failed; failure recorded")
 // Service defines the worker-facing interface for processing enrichment jobs.
 // The enrichment worker goroutine calls these methods; REST/MCP handlers do not.
 type Service interface {
-	// ClaimNextJob atomically claims the next pending enrichment job.
-	// Returns (nil, nil) if no jobs are available.
-	ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error)
+	// GetJob retrieves an enrichment job by ID.
+	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
+	GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error)
+
+	// MarkJobProcessing transitions a job to the processing state.
+	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
+	MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error
 
 	// ProcessJob runs the full enrichment pipeline for a claimed job:
 	//   1. Load pattern from Postgres
@@ -127,10 +131,14 @@ func New(
 	}, nil
 }
 
-// ClaimNextJob atomically claims the next pending enrichment job.
-// Returns (nil, nil) if no jobs are available.
-func (s *enrichmentService) ClaimNextJob(ctx context.Context) (*enrichmentjob.Job, error) {
-	return s.jobRepo.ClaimPending(ctx)
+// GetJob retrieves an enrichment job by ID.
+func (s *enrichmentService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
+	return s.jobRepo.Get(ctx, jobID)
+}
+
+// MarkJobProcessing transitions a job to the processing state.
+func (s *enrichmentService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
+	return s.jobRepo.MarkProcessing(ctx, jobID)
 }
 
 // ProcessJob dispatches to the chunk-based or pattern-based pipeline based on

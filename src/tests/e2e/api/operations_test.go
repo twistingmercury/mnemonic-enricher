@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twistingmercury/mnemonic/tests/e2e/helpers"
+	"github.com/twistingmercury/mnemonic-enricher/tests/e2e/helpers"
 )
 
 // =============================================================================
@@ -75,7 +75,7 @@ func TestHealthCheck_AllHealthyReturns200(t *testing.T) {
 // successful response without any authentication headers. This confirms the
 // endpoint is public as specified.
 func TestHealthCheck_NoAuthRequired(t *testing.T) {
-	client := helpers.NewUnauthenticatedClient(t)
+	client := helpers.NewTestClient(t)
 
 	resp, err := client.Get("/health")
 	if err != nil {
@@ -156,15 +156,6 @@ func TestHealthCheck_ContentTypeIsJSON(t *testing.T) {
 	}
 }
 
-// TestHealthCheck_UnhealthyReturns503 verifies that when a dependency is
-// down, the endpoint returns 503 Service Unavailable with status "Critical".
-//
-// Note: This test requires infrastructure manipulation (stopping a
-// dependency container) and is skipped in standard E2E runs.
-func TestHealthCheck_UnhealthyReturns503(t *testing.T) {
-	t.Skip("requires infrastructure manipulation")
-}
-
 // -----------------------------------------------------------------------------
 // Version (GET /version)
 // -----------------------------------------------------------------------------
@@ -196,7 +187,7 @@ func TestVersion_ReturnsOKWithVersionInfo(t *testing.T) {
 // TestVersion_NoAuthRequired verifies the version endpoint returns a
 // successful response without any authentication headers.
 func TestVersion_NoAuthRequired(t *testing.T) {
-	client := helpers.NewUnauthenticatedClient(t)
+	client := helpers.NewTestClient(t)
 
 	resp, err := client.Get("/version")
 	if err != nil {
@@ -301,24 +292,6 @@ func TestMetrics_NoAuthRequired(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
-}
-
-// -----------------------------------------------------------------------------
-// Swagger UI (GET /swagger/index.html)
-// -----------------------------------------------------------------------------
-
-// TestSwaggerUI_ReturnsOK verifies the Swagger UI index page is served and
-// returns HTTP 200. The endpoint is public and requires no authentication.
-func TestSwaggerUI_ReturnsOK(t *testing.T) {
-	client := helpers.NewUnauthenticatedClient(t)
-
-	resp, err := client.Get("/swagger/index.html")
-	if err != nil {
-		t.Fatalf("failed to GET /swagger/index.html: %v", err)
-	}
-	defer resp.Body.Close()
-
-	helpers.AssertStatusCode(t, resp, http.StatusOK)
 }
 
 // TestMetrics_ContainsStandardGoMetrics verifies the response body contains

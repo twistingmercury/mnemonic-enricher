@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	"github.com/twistingmercury/mnemonic/internal/repository/agent"
-	"github.com/twistingmercury/mnemonic/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
 )
 
 const (

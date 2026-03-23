@@ -1,12 +1,4 @@
-// Package handlers provides shared utilities and the parent package for
-// Mnemonic's HTTP handler groups. Sub-packages implement endpoint logic
-// for agents, patterns, skills, skill files, and operational endpoints.
-//
-// This package contains shared types and utilities used by all handler
-// sub-packages: RFC 7807 error responses, cursor-based pagination,
-// query parameter parsing, and service error mapping.
-//
-// Documentation:
-//   - API: docs/api/openapi/mnemonic-v1.yaml
-//   - Design: docs/design/service-layer.md (Error Mapping, Cursor-Based Pagination)
+// Package handlers is the parent package for mnemonic-enricher's HTTP handler
+// groups. The only active sub-package is operations, which implements the
+// /health and /version endpoints.
 package handlers

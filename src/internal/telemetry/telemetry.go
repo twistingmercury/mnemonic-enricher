@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/rs/zerolog"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/metrics"
-	"github.com/twistingmercury/mnemonic/internal/version"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
+	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 	"github.com/twistingmercury/otelx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"

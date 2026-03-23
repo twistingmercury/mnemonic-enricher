@@ -62,7 +62,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
 
 ## Implementation Plan
 
-- [ ] **Cycle 1 - Fix module path and remove routes.go**: Replace all remaining `github.com/twistingmercury/mnemonic/` import prefixes with `github.com/twistingmercury/mnemonic-enricher/` across all Go source files; delete `internal/server/routes.go` and remove its call site from `server.go` so the project compiles cleanly.
+- [x] **Cycle 1 - Fix module path and remove routes.go**: Replace all remaining `github.com/twistingmercury/mnemonic/` import prefixes with `github.com/twistingmercury/mnemonic-enricher/` across all Go source files; delete `internal/server/routes.go` and remove its call site from `server.go` so the project compiles cleanly.
   - Agent: `go software engineer`
   - Files: `src/internal/server/server.go`, `src/internal/server/routes.go` (delete), all `.go` files with old import prefix
   - Steps:
@@ -72,7 +72,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./...`
   - Done: `go build ./...` exits 0 with zero errors
 
-- [ ] **Cycle 2 - Delete non-enrichment packages**: Remove all handler, service, repository, and MCP packages unrelated to enrichment; remove their imports and wiring from `server.go`.
+- [x] **Cycle 2 - Delete non-enrichment packages**: Remove all handler, service, repository, and MCP packages unrelated to enrichment; remove their imports and wiring from `server.go`.
   - Agent: `go software engineer`
   - Files: `src/internal/handlers/agents/`, `src/internal/handlers/patterns/`, `src/internal/handlers/skills/`, `src/internal/handlers/skillfiles/`, `src/internal/service/agent/`, `src/internal/service/pattern/`, `src/internal/service/search/`, `src/internal/service/skill/`, `src/internal/service/skillfile/`, `src/internal/repository/skill/`, `src/internal/repository/skillfile/`, `src/internal/mcpserver/`, `src/docs/swagger/`, `src/internal/handlers/respond.go`, `src/internal/handlers/respond_test.go`, `src/internal/server/server.go`
   - Steps:
@@ -84,7 +84,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./... && go test ./...`
   - Done: `go build ./...` exits 0; `go test ./...` passes; none of the deleted package paths exist under `src/internal/`
 
-- [ ] **Cycle 3 - Add queue abstraction package**: Create `internal/queue/queue.go` with the provider-agnostic `Delivery` struct and `Subscriber` interface; create the RabbitMQ implementation with reconnect logic; add `github.com/rabbitmq/amqp091-go` to `go.mod`.
+- [x] **Cycle 3 - Add queue abstraction package**: Create `internal/queue/queue.go` with the provider-agnostic `Delivery` struct and `Subscriber` interface; create the RabbitMQ implementation with reconnect logic; add `github.com/rabbitmq/amqp091-go` to `go.mod`.
   - Agent: `go software engineer`
   - Files: `src/internal/queue/queue.go`, `src/internal/queue/rabbitmq/subscriber.go`, `src/internal/queue/rabbitmq/subscriber_test.go`, `src/go.mod`, `src/go.sum`
   - Steps:
@@ -95,7 +95,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/queue/...`
   - Done: `go test ./internal/queue/...` exits 0; `queue.Subscriber` interface has no amqp091 types in its signature
 
-- [ ] **Cycle 4 - Add QueueConfig to config**: Introduce `QueueConfig` and `RabbitMQConfig` structs in `config.go`; add `Queue QueueConfig` to `MnemonicConfig`; register defaults and viper bindings; remove `EnrichmentConfig.PollInterval`.
+- [x] **Cycle 4 - Add QueueConfig to config**: Introduce `QueueConfig` and `RabbitMQConfig` structs in `config.go`; add `Queue QueueConfig` to `MnemonicConfig`; register defaults and viper bindings; remove `EnrichmentConfig.PollInterval`.
   - Agent: `go software engineer`
   - Files: `src/internal/config/config.go`, `src/internal/config/defaults.go`, `src/internal/config/config_test.go`
   - Steps:
@@ -108,7 +108,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/config/...`
   - Done: `go test ./internal/config/...` exits 0; `MnemonicConfig` has a `Queue QueueConfig` field; `EnrichmentConfig` has no `PollInterval` field
 
-- [ ] **Cycle 5 - Add GetJob and MarkJobProcessing to enrichment service**: Extend the `Service` interface and its implementation with `GetJob` and `MarkJobProcessing`; keep `ClaimNextJob` in place for now (removed in Cycle 6).
+- [x] **Cycle 5 - Add GetJob and MarkJobProcessing to enrichment service**: Extend the `Service` interface and its implementation with `GetJob` and `MarkJobProcessing`; keep `ClaimNextJob` in place for now (removed in Cycle 6).
   - Agent: `go software engineer`
   - Files: `src/internal/service/enrichment/service.go`, `src/internal/service/enrichment/service_test.go`
   - Steps:
@@ -118,7 +118,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./internal/service/enrichment/...`
   - Done: `go test ./internal/service/enrichment/...` exits 0; `Service` interface exposes `GetJob` and `MarkJobProcessing`
 
-- [ ] **Cycle 6 - Refactor enrichment worker and finalise service interface**: Remove `ClaimNextJob` from the `Service` interface; refactor the enrichment `Worker` to consume from `queue.Subscriber`; update `server.go` to construct the provider-correct subscriber and pass it to the worker.
+- [x] **Cycle 6 - Refactor enrichment worker and finalise service interface**: Remove `ClaimNextJob` from the `Service` interface; refactor the enrichment `Worker` to consume from `queue.Subscriber`; update `server.go` to construct the provider-correct subscriber and pass it to the worker.
   - Agent: `go software engineer`
   - Files: `src/internal/service/enrichment/service.go`, `src/internal/service/enrichment/service_test.go`, `src/internal/enricher/enrichment.go`, `src/internal/enricher/enrichment_test.go`, `src/internal/server/server.go`
   - Steps:
@@ -132,7 +132,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go build ./... && go test ./internal/enricher/... ./internal/service/enrichment/...`
   - Done: `go build ./...` exits 0; enricher package imports no amqp091 types; `Worker` struct has no `cfg.PollInterval` references; tests pass
 
-- [ ] **Cycle 7 - Update docker-compose files and fix CI workflow**: Add RabbitMQ service to both compose files; add `MNEMONIC_QUEUE_*` env vars to enricher service entries; fix the wrong workflow filename in the CI push trigger.
+- [x] **Cycle 7 - Update docker-compose files and fix CI workflow**: Add RabbitMQ service to both compose files; add `MNEMONIC_QUEUE_*` env vars to enricher service entries; fix the wrong workflow filename in the CI push trigger.
   - Agent: `devops engineer`
   - Files: `docker-compose.yaml`, `src/tests/docker-compose.yaml`, `.github/workflows/mnemonic-enrichment-ci.yaml`
   - Steps:
@@ -142,7 +142,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `docker compose -f docker-compose.yaml config > /dev/null && docker compose -f src/tests/docker-compose.yaml config > /dev/null`
   - Done: both compose files parse without error; each contains a RabbitMQ service; the CI workflow push trigger references the correct filename
 
-- [ ] **Cycle 8 - Cleanup helpers and doc comments**: Remove non-enrichment types from e2e helpers; update package doc comments to reflect reduced scope.
+- [x] **Cycle 8 - Cleanup helpers and doc comments**: Remove non-enrichment types from e2e helpers; update package doc comments to reflect reduced scope.
   - Agent: `go software engineer`
   - Files: `src/tests/e2e/helpers/types.go`, `src/tests/e2e/helpers/helpers.go`, `src/internal/handlers/doc.go`, `src/internal/service/doc.go`, `src/internal/repository/doc.go`
   - Steps:
@@ -152,7 +152,7 @@ database. Without this split, the enricher cannot be deployed or scaled independ
   - Verify: `cd src && go test ./...`
   - Done: `go test ./...` exits 0; no references to deleted packages remain in doc comments or e2e helpers
 
-- [ ] **Cycle 9 - Update README.md, CHANGELOG.md, and Makefile**: Rewrite README.md and CHANGELOG.md to reflect the enricher as a new standalone project; update the Makefile to remove stale targets and document the current build/run workflow.
+- [x] **Cycle 9 - Update README.md, CHANGELOG.md, and Makefile**: Rewrite README.md and CHANGELOG.md to reflect the enricher as a new standalone project; update the Makefile to remove stale targets and document the current build/run workflow.
   - Agent: `technical writer`
   - Files: `README.md`, `CHANGELOG.md`, `Makefile`
   - Steps:

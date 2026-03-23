@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/twistingmercury/mnemonic/internal/middleware"
+	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
 	"go.opentelemetry.io/otel/trace"
 )
 

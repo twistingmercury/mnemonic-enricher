@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	"github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 )
 
 // testJob returns a sample enrichment job for testing.

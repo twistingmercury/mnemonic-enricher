@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/heartbeat"
-	"github.com/twistingmercury/mnemonic/internal/health"
+	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 )
 
 // --- Mocks ---

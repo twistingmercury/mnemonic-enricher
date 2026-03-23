@@ -9,8 +9,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 
-	"github.com/twistingmercury/mnemonic/internal/service"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 const (

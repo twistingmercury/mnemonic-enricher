@@ -1,6 +1,5 @@
-// Package service provides the business logic layer for the Mnemonic server.
-// Services sit between transport handlers (REST, MCP) and data repositories,
-// orchestrating multi-store writes, enrichment, and error translation.
+// Package service provides the business logic layer for the mnemonic-enricher.
+// Services sit between transport handlers and data repositories.
 //
-// Sub-packages: agent, pattern, skill, skillfile, enrichment, search, openai.
+// Sub-packages: enrichment, openai.
 package service

@@ -1,6 +1,6 @@
 package openai
 
-import "github.com/twistingmercury/mnemonic/internal/config"
+import "github.com/twistingmercury/mnemonic-enricher/internal/config"
 
 // NewEmbeddingServiceForTest creates an EmbeddingService pointing at a custom URL.
 // Exported for use in black-box tests.

@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 // --- Mock: ToolDependencies ---

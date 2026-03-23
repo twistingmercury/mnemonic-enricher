@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	"github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
-	"github.com/twistingmercury/mnemonic/internal/service/search"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 
-	repository "github.com/twistingmercury/mnemonic/internal/repository"
+	repository "github.com/twistingmercury/mnemonic-enricher/internal/repository"
 )
 
 // --- Mock: openaisvc.EmbeddingService ---

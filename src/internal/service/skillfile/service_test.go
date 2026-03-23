@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	skillrepo "github.com/twistingmercury/mnemonic/internal/repository/skill"
-	skillfilerepo "github.com/twistingmercury/mnemonic/internal/repository/skillfile"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	skillfilesvc "github.com/twistingmercury/mnemonic/internal/service/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	skillrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
+	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	skillfilesvc "github.com/twistingmercury/mnemonic-enricher/internal/service/skillfile"
 )
 
 // ---------- Mock Repositories ----------

@@ -13,15 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/repository"
-	agentrepo "github.com/twistingmercury/mnemonic/internal/repository/agent"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	enrichmentjob "github.com/twistingmercury/mnemonic/internal/repository/enrichmentjob"
-	graphrepo "github.com/twistingmercury/mnemonic/internal/repository/graph"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service/enrichment"
-	openaisvc "github.com/twistingmercury/mnemonic/internal/service/openai"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
+	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
+	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
+	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
 // --- Mock: enrichmentjob.Repository ---
@@ -395,7 +395,6 @@ func (m *mockChunkRepo) AnyFailedForPattern(ctx context.Context, patternID uuid.
 func testConfig() config.EnrichmentConfig {
 	return config.EnrichmentConfig{
 		WorkerCount:            2,
-		PollInterval:           5 * time.Second,
 		MaxAttempts:            3,
 		RetryDelay:             30 * time.Second,
 		JobTimeout:             5 * time.Minute,
@@ -594,38 +593,66 @@ func assertExpectations(t *testing.T, deps *testDeps) {
 	deps.chunkRepo.AssertExpectations(t)
 }
 
-// ---------- ClaimNextJob ----------
+// ---------- GetJob ----------
 
-func TestClaimNextJob(t *testing.T) {
+func TestGetJob(t *testing.T) {
 	t.Parallel()
 
-	t.Run("happy path returns claimed job", func(t *testing.T) {
+	t.Run("returns job when found", func(t *testing.T) {
 		t.Parallel()
 
 		svc, deps := newTestService(t)
 		job := testJob()
-		deps.jobRepo.On("ClaimPending", mock.Anything).Return(job, nil)
+		deps.jobRepo.On("Get", mock.Anything, testJobID).Return(job, nil)
 
-		result, err := svc.ClaimNextJob(context.Background())
+		result, err := svc.GetJob(context.Background(), testJobID)
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.Equal(t, testJobID, result.ID)
-		require.NotNil(t, result.PatternID)
-		assert.Equal(t, testPatternID, *result.PatternID)
 		assertExpectations(t, deps)
 	})
 
-	t.Run("no jobs available returns nil nil", func(t *testing.T) {
+	t.Run("propagates not-found error", func(t *testing.T) {
 		t.Parallel()
 
 		svc, deps := newTestService(t)
-		deps.jobRepo.On("ClaimPending", mock.Anything).Return(nil, nil)
+		deps.jobRepo.On("Get", mock.Anything, testJobID).Return(nil, enrichmentjob.ErrNotFound)
 
-		result, err := svc.ClaimNextJob(context.Background())
+		result, err := svc.GetJob(context.Background(), testJobID)
+
+		require.ErrorIs(t, err, enrichmentjob.ErrNotFound)
+		assert.Nil(t, result)
+		assertExpectations(t, deps)
+	})
+}
+
+// ---------- MarkJobProcessing ----------
+
+func TestMarkJobProcessing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns nil on success", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("MarkProcessing", mock.Anything, testJobID).Return(nil)
+
+		err := svc.MarkJobProcessing(context.Background(), testJobID)
 
 		require.NoError(t, err)
-		assert.Nil(t, result)
+		assertExpectations(t, deps)
+	})
+
+	t.Run("propagates not-found error", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("MarkProcessing", mock.Anything, testJobID).Return(enrichmentjob.ErrNotFound)
+
+		err := svc.MarkJobProcessing(context.Background(), testJobID)
+
+		require.ErrorIs(t, err, enrichmentjob.ErrNotFound)
 		assertExpectations(t, deps)
 	})
 }

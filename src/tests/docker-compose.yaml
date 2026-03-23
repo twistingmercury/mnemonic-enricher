@@ -17,39 +17,32 @@ services:
   e2e_neo4j:
     image: ghcr.io/twistingmercury/mnemonic-neo4j:v1.0.0-dev
     environment:
-      NEO4J_AUTH: e2e_neo4j/mnemonic_dev
+      NEO4J_AUTH: neo4j/mnemonic_dev
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_dbms_security_procedures_allowlist: apoc.*
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u e2e_neo4j -p mnemonic_dev 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p mnemonic_dev 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - enrichment_network
 
-  e2e_api:
-    image: ghcr.io/twistingmercury/mnemonic-api:latest-dev
-    pull_policy: always
-    environment:
-      MNEMONIC_DATABASE_POSTGRES_HOST: e2e_postgres
-      MNEMONIC_DATABASE_POSTGRES_PASSWORD: mnemonic_dev
-      MNEMONIC_DATABASE_POSTGRES_SSL_MODE: disable
-      MNEMONIC_DATABASE_NEO4J_URI: bolt://e2e_neo4j:7687
-      MNEMONIC_DATABASE_NEO4J_PASSWORD: mnemonic_dev
-      MNEMONIC_OPENAI_API_KEY: sk-test-dummy
-      MNEMONIC_LOGGING_LEVEL: error
-    depends_on:
-      e2e_neo4j:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+  e2e_rabbitmq:
+    image: rabbitmq:4.0-management
     healthcheck:
-      test: ["CMD", "/mnemonic-api", "--health"]
-      interval: 2s
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - enrichment_network
+
+  e2e_openai_stub:
+    build:
+      context: ./e2e/openai-stub
+      dockerfile: Dockerfile
     networks:
       - enrichment_network
 
@@ -64,6 +57,29 @@ services:
       MNEMONIC_DATABASE_NEO4J_PASSWORD: mnemonic_dev
       MNEMONIC_OPENAI_API_KEY: sk-test-dummy
       MNEMONIC_LOGGING_LEVEL: debug
+      MNEMONIC_QUEUE_PROVIDER: rabbitmq
+      MNEMONIC_QUEUE_RABBITMQ_HOST: e2e_rabbitmq
+      MNEMONIC_QUEUE_RABBITMQ_USER: guest
+      MNEMONIC_QUEUE_RABBITMQ_PASSWORD: guest
+      MNEMONIC_QUEUE_RABBITMQ_QUEUE: enrichment-jobs
+      MNEMONIC_OPENAI_BASE_URL: http://e2e_openai_stub:8090/v1
+      MNEMONIC_ENRICHMENT_RETRY_DELAY: 1s
+    depends_on:
+      e2e_postgres:
+        condition: service_healthy
+      e2e_neo4j:
+        condition: service_healthy
+      e2e_rabbitmq:
+        condition: service_healthy
+      e2e_openai_stub:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/mnemonic-enricher", "--health"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks:
+      - enrichment_network
 
   e2e_tests:
     build:
@@ -71,11 +87,16 @@ services:
       dockerfile: Dockerfile
     container_name: mnemonic_tests
     environment:
-      - API_URL=http://e2e_api:8080
-      - MCP_URL=http://e2e_api:8081
-      - METRICS_URL=http://e2e_api:9090
+      ENRICHER_URL: http://e2e_enricher:8080
+      METRICS_URL: http://e2e_enricher:9090
+      POSTGRES_DSN: postgres://mnemonic:mnemonic_dev@e2e_postgres:5432/mnemonic?sslmode=disable
+      NEO4J_URI: bolt://e2e_neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: mnemonic_dev
+      RABBITMQ_URL: amqp://guest:guest@e2e_rabbitmq:5672/
+      OPENAI_STUB_URL: http://e2e_openai_stub:8090
     depends_on:
-      e2e_api:
+      e2e_enricher:
         condition: service_healthy
     networks:
       - enrichment_network

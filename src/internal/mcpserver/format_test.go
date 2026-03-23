@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 // --- formatSearchResults tests ---

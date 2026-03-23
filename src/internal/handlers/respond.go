@@ -15,7 +15,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/twistingmercury/mnemonic/internal/service"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
 )
 
 // ProblemBaseURI is the base URI for problem type URIs.

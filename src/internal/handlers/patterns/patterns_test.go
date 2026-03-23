@@ -15,13 +15,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/handlers/patterns"
-	chunkrepo "github.com/twistingmercury/mnemonic/internal/repository/chunk"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	"github.com/twistingmercury/mnemonic/internal/service"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/patterns"
+	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 func init() {

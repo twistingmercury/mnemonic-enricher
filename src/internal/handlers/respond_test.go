@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/handlers"
-	"github.com/twistingmercury/mnemonic/internal/service"
+	"github.com/twistingmercury/mnemonic-enricher/internal/handlers"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
 )
 
 func init() {

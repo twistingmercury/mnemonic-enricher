@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
-	"github.com/twistingmercury/mnemonic/internal/telemetry"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
 )
 
 func createTestConfig() *config.MnemonicConfig {
@@ -58,11 +58,10 @@ func createTestConfig() *config.MnemonicConfig {
 			},
 		},
 		Enrichment: config.EnrichmentConfig{
-			WorkerCount:  2,
-			PollInterval: 5 * time.Second,
-			MaxAttempts:  3,
-			RetryDelay:   30 * time.Second,
-			JobTimeout:   5 * time.Minute,
+			WorkerCount: 2,
+			MaxAttempts: 3,
+			RetryDelay:  30 * time.Second,
+			JobTimeout:  5 * time.Minute,
 		},
 		Logging: config.LoggingConfig{
 			Level:         "info",

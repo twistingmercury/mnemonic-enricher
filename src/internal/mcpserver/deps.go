@@ -8,9 +8,9 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	patternrepo "github.com/twistingmercury/mnemonic/internal/repository/pattern"
-	patternsvc "github.com/twistingmercury/mnemonic/internal/service/pattern"
-	searchsvc "github.com/twistingmercury/mnemonic/internal/service/search"
+	patternrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
+	patternsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/pattern"
+	searchsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/search"
 )
 
 // ToolDependencies defines the interface that MCP tool handlers require.

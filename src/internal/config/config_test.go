@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/mnemonic/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 // TestDefaultValues verifies that all default values are set correctly.
@@ -66,6 +66,7 @@ func TestDefaultValues(t *testing.T) {
 	assert.Equal(t, config.DefaultOpenAIMaxRequestsPerMinute, cfg.OpenAI.MaxRequestsPerMinute)
 	assert.Equal(t, config.DefaultOpenAIRetryAttempts, cfg.OpenAI.RetryAttempts)
 	assert.Equal(t, config.DefaultOpenAIRetryDelay, cfg.OpenAI.RetryDelay)
+	assert.Equal(t, config.DefaultOpenAIBaseURL, cfg.OpenAI.BaseURL)
 
 	// Rate limit defaults
 	assert.Equal(t, config.DefaultRateLimitEnabled, cfg.RateLimit.Enabled)
@@ -76,7 +77,6 @@ func TestDefaultValues(t *testing.T) {
 
 	// Enrichment defaults
 	assert.Equal(t, config.DefaultEnrichmentWorkerCount, cfg.Enrichment.WorkerCount)
-	assert.Equal(t, config.DefaultEnrichmentPollInterval, cfg.Enrichment.PollInterval)
 	assert.Equal(t, config.DefaultEnrichmentMaxAttempts, cfg.Enrichment.MaxAttempts)
 	assert.Equal(t, config.DefaultEnrichmentRetryDelay, cfg.Enrichment.RetryDelay)
 	assert.Equal(t, config.DefaultEnrichmentJobTimeout, cfg.Enrichment.JobTimeout)
@@ -99,6 +99,16 @@ func TestDefaultValues(t *testing.T) {
 	assert.Equal(t, config.DefaultTracingEnabled, cfg.Observability.Tracing.Enabled)
 	assert.Equal(t, config.DefaultTracingSampleRate, cfg.Observability.Tracing.SampleRate)
 	assert.Equal(t, config.DefaultTracingOTLPInsecure, cfg.Observability.Tracing.OTLPInsecure)
+
+	// Queue defaults
+	assert.Equal(t, config.DefaultQueueProvider, cfg.Queue.Provider)
+	assert.Equal(t, config.DefaultRabbitMQHost, cfg.Queue.RabbitMQ.Host)
+	assert.Equal(t, config.DefaultRabbitMQPort, cfg.Queue.RabbitMQ.Port)
+	assert.Equal(t, config.DefaultRabbitMQUser, cfg.Queue.RabbitMQ.User)
+	assert.Equal(t, config.DefaultRabbitMQVHost, cfg.Queue.RabbitMQ.VHost)
+	assert.Equal(t, config.DefaultRabbitMQQueue, cfg.Queue.RabbitMQ.Queue)
+	assert.Equal(t, config.DefaultRabbitMQPrefetchCount, cfg.Queue.RabbitMQ.PrefetchCount)
+	assert.Equal(t, config.DefaultRabbitMQReconnectDelay, cfg.Queue.RabbitMQ.ReconnectDelay)
 }
 
 // TestYAMLFileLoading verifies that configuration can be loaded from a YAML file.
@@ -734,13 +744,6 @@ func TestValidation_EnrichmentConfig(t *testing.T) {
 				cfg.Enrichment.WorkerCount = 0
 			},
 			expectError: "enrichment.worker_count",
-		},
-		{
-			name: "zero poll_interval",
-			modify: func(cfg *config.MnemonicConfig) {
-				cfg.Enrichment.PollInterval = 0
-			},
-			expectError: "enrichment.poll_interval",
 		},
 		{
 			name: "zero max_attempts",
@@ -1643,7 +1646,6 @@ func validConfig() *config.MnemonicConfig {
 		},
 		Enrichment: config.EnrichmentConfig{
 			WorkerCount:            2,
-			PollInterval:           5 * time.Second,
 			MaxAttempts:            3,
 			RetryDelay:             30 * time.Second,
 			JobTimeout:             5 * time.Minute,
@@ -1679,4 +1681,57 @@ func validConfig() *config.MnemonicConfig {
 			Domains:   []string{"backend", "frontend", "testing"},
 		},
 	}
+}
+
+func TestOpenAIBaseURL_EnvOverride(t *testing.T) {
+	clearMnemonicEnvVars(t)
+	t.Setenv("MNEMONIC_OPENAI_BASE_URL", "http://localhost:8090/v1")
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.SetEnvPrefix("MNEMONIC")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	assert.Equal(t, "http://localhost:8090/v1", cfg.OpenAI.BaseURL)
+}
+
+func TestOpenAIBaseURL_ValidateAcceptsValidURL(t *testing.T) {
+	clearMnemonicEnvVars(t)
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.Set("openai.base_url", "http://localhost:8090/v1")
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	errs := cfg.Validate()
+	for _, e := range errs {
+		assert.NotEqual(t, "openai.base_url", e.Field)
+	}
+}
+
+func TestOpenAIBaseURL_ValidateRejectsBareString(t *testing.T) {
+	clearMnemonicEnvVars(t)
+
+	v := viper.New()
+	config.SetDefaults(v)
+	v.Set("openai.base_url", "not-a-url")
+
+	cfg := &config.MnemonicConfig{}
+	require.NoError(t, v.Unmarshal(cfg))
+
+	errs := cfg.Validate()
+	found := false
+	for _, e := range errs {
+		if e.Field == "openai.base_url" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected validation error for openai.base_url with bare string %q", "not-a-url")
 }

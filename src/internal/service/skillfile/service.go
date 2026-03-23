@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	skillrepo "github.com/twistingmercury/mnemonic/internal/repository/skill"
-	skillfilerepo "github.com/twistingmercury/mnemonic/internal/repository/skillfile"
-	"github.com/twistingmercury/mnemonic/internal/service"
+	skillrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skill"
+	skillfilerepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/skillfile"
+	"github.com/twistingmercury/mnemonic-enricher/internal/service"
 
 	"github.com/rs/zerolog"
 )
