@@ -47,7 +47,7 @@ services:
       - enrichment_network
 
   e2e_enricher:
-    image: ghcr.io/twistingmercury/mnemonic:latest
+    image: ghcr.io/twistingmercury/mnemonic-enrichment:latest
     pull_policy: never
     environment:
       MNEMONIC_DATABASE_POSTGRES_HOST: e2e_postgres
