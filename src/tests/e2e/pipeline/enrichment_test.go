@@ -19,19 +19,11 @@ func TestEnrichmentPipeline_HappyPath(t *testing.T) {
 	chunkID := helpers.SeedChunk(t, pool, patternID)
 	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
 
-	t.Cleanup(func() {
-		helpers.CleanupPattern(t, pool, patternID)
-	})
-
 	driver := helpers.NewNeo4jDriver(t)
 
-	t.Cleanup(func() {
-		_ = driver.Close(context.Background())
-	})
-
-	t.Cleanup(func() {
-		helpers.CleanupPatternGraph(t, driver, patternID)
-	})
+	t.Cleanup(func() { _ = driver.Close(context.Background()) })
+	t.Cleanup(func() { helpers.CleanupPatternGraph(t, driver, patternID) })
+	t.Cleanup(func() { helpers.CleanupPattern(t, pool, patternID) })
 
 	helpers.PublishJob(t, jobID)
 
@@ -131,15 +123,9 @@ func TestEnrichmentPipeline_OpenAIFailure(t *testing.T) {
 	jobID := helpers.SeedEnrichmentJob(t, pool, chunkID)
 
 	driver := helpers.NewNeo4jDriver(t)
-	t.Cleanup(func() {
-		_ = driver.Close(context.Background())
-	})
-	t.Cleanup(func() {
-		helpers.CleanupPattern(t, pool, patternID)
-	})
-	t.Cleanup(func() {
-		helpers.CleanupPatternGraph(t, driver, patternID)
-	})
+	t.Cleanup(func() { _ = driver.Close(context.Background()) })
+	t.Cleanup(func() { helpers.CleanupPatternGraph(t, driver, patternID) })
+	t.Cleanup(func() { helpers.CleanupPattern(t, pool, patternID) })
 
 	helpers.PublishJob(t, jobID)
 
