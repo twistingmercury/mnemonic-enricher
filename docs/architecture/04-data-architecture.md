@@ -297,7 +297,7 @@ Skills may have child files (scripts, references, assets) stored in the `skill_f
 
 Background processing queue for pattern enrichment. See [ADR-004](00-architectural-decisions.md#adr-004) for the queue design.
 
-**Schema:** Postgres-backed queue using `FOR UPDATE SKIP LOCKED` for safe concurrent processing. Retry with exponential backoff (max 3 attempts). `pattern_id` is nullable (was NOT NULL prior to migration 000009). `chunk_id` (FK to `pattern_chunks.id`, nullable) is set for chunk-level enrichment jobs; `pattern_id` is set for legacy jobs. CASCADE delete on parent pattern or chunk.
+**Schema:** Enrichment job tracking table. Jobs arrive via RabbitMQ (queue: `enrichment-jobs`); the API publishes messages and the enricher subscribes. This table tracks job status, not used as a queue itself. Retry with exponential backoff (max 3 attempts). `pattern_id` is nullable (was NOT NULL prior to migration 000009). `chunk_id` (FK to `pattern_chunks.id`, nullable) is set for chunk-level enrichment jobs; `pattern_id` is set for legacy jobs. CASCADE delete on parent pattern or chunk.
 
 **Uniqueness:** A partial unique index prevents duplicate pending or processing jobs for the same pattern:
 
@@ -479,18 +479,19 @@ sequenceDiagram
     participant ADMIN as Admin Tool
     participant API as Mnemonic Admin API
     participant PG as Postgres
-    participant WORKER as Background Worker
+    participant RMQ as RabbitMQ
+    participant WORKER as Enrichment Worker
     participant OPENAI as OpenAI API
     participant PGV as PGVector
     participant NEO as Neo4j
 
     ADMIN->>API: POST /v1/api/patterns
     API->>PG: INSERT pattern (status: pending)
-    API->>PG: INSERT enrichment_job
+    API->>RMQ: Publish enrichment job
     API-->>ADMIN: 202 Accepted
 
-    Note over WORKER,PG: Async Processing
-    WORKER->>PG: Claim job (FOR UPDATE SKIP LOCKED)
+    Note over RMQ,WORKER: Async Processing
+    RMQ->>WORKER: Deliver enrichment message
     WORKER->>PG: Load pattern content
     WORKER->>WORKER: Split content at H2 headings into chunks
     loop For each chunk
@@ -633,7 +634,7 @@ All write operations use explicit transactions with appropriate isolation. The g
 | -------------------- | --------------- | ----------------------------------------------- |
 | Read queries         | Read Committed  | Default, sufficient for reads                   |
 | Write operations     | Read Committed  | Prevents dirty reads                            |
-| Enrichment job claim | Read Committed  | FOR UPDATE SKIP LOCKED prevents race conditions |
+| Enrichment job status update | Read Committed  | RabbitMQ ensures single delivery; DB updates are per-worker |
 
 #### Cross-Database Consistency
 
@@ -811,7 +812,7 @@ migrate -path src/migrations/postgres -database "$DB_URL" goto 5
 | `idx_pattern_agent_assoc_agent`      | pattern_agent_associations | `agent_id`                             | btree               | FK join performance                                   |
 | `idx_pattern_agent_assoc_pattern`    | pattern_agent_associations | `pattern_id`                           | btree               | FK join performance                                   |
 | `idx_enrichment_jobs_pattern`        | enrichment_jobs            | `pattern_id`                           | btree               | FK join performance                                   |
-| `idx_enrichment_jobs_pending`        | enrichment_jobs            | `scheduled_for` WHERE status='pending' | btree (partial)     | Worker job polling                                    |
+| `idx_enrichment_jobs_pending`        | enrichment_jobs            | `scheduled_for` WHERE status='pending' | btree (partial)     | Pending job status queries                            |
 | `idx_enrichment_jobs_processing`     | enrichment_jobs            | `started_at` WHERE status='processing' | btree (partial)     | Timeout detection                                     |
 | `idx_enrichment_jobs_unique_pending` | enrichment_jobs            | `pattern_id` WHERE status IN ('pending','processing') | unique (partial) | Prevent duplicate pending/processing jobs per pattern |
 | `idx_agents_definition`              | agents                     | `definition`                           | GIN                 | JSONB queries                                         |

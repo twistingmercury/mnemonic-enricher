@@ -128,19 +128,20 @@ sequenceDiagram
     participant Admin
     participant REST as Admin REST API
     participant PG as Postgres
-    participant WORKER as Background Worker
+    participant RMQ as RabbitMQ
+    participant WORKER as Enrichment Worker
     participant OPENAI as OpenAI Embedding API
     participant NEO as Neo4j
 
     Admin->>REST: POST /v1/api/patterns (JSON)
     REST->>REST: Validate request
     REST->>PG: Store pattern (status: pending)
-    REST->>PG: Queue enrichment job
+    REST->>RMQ: Publish enrichment job
     PG-->>REST: Pattern ID
     REST-->>Admin: 202 Accepted
 
     Note over WORKER: Async enrichment
-    WORKER->>PG: Claim job (FOR UPDATE SKIP LOCKED)
+    RMQ->>WORKER: Deliver enrichment message
     WORKER->>OPENAI: Generate embedding
     OPENAI-->>WORKER: vector(1536)
     WORKER->>PG: Store embedding, status: enriched

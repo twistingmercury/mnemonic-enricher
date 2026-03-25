@@ -168,7 +168,7 @@ Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, 
 
 ### Decision
 
-**Patterns use relational columns (not JSONB) with async enrichment via a Postgres-backed job queue.**
+**Patterns use relational columns (not JSONB) with async enrichment via a RabbitMQ-based job queue.**
 
 **Pattern table design:**
 
@@ -179,7 +179,7 @@ Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, 
 
 **Enrichment pipeline:**
 
-- Postgres-backed queue using `FOR UPDATE SKIP LOCKED` for safe concurrent processing
+- RabbitMQ-based job queue: the API publishes enrichment jobs to a RabbitMQ queue (`enrichment-jobs`), and the enricher subscribes to receive them
 - Retry with exponential backoff for transient API failures (max 3 attempts)
 - CASCADE delete: enrichment jobs auto-cleaned when pattern deleted
 - Two-phase enrichment: (1) generate embedding via OpenAI API, (2) extract entities and create Neo4j relationships
@@ -195,8 +195,8 @@ Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, 
 **Positive:**
 
 - PGVector index operates directly on the embedding column (no JSONB extraction)
-- Enrichment queue requires no external message broker
-- Concurrent enrichment workers are safe via `SKIP LOCKED`
+- RabbitMQ ensures single delivery per consumer, preventing duplicate processing
+- Enrichment workers scale horizontally by adding consumers to the queue
 - Pattern deletion cascades to jobs (no orphans)
 
 **Negative:**
@@ -212,7 +212,7 @@ Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, 
 | ADR-001  | Team knowledge graph         | Solve real problems: tooling drift and knowledge silos         | ACTIVE |
 | ADR-002  | MCP protocol integration     | Native Claude Code integration, dual protocol architecture     | ACTIVE |
 | ADR-003  | JSONB document model         | Schema-agnostic entity storage, CRC-64 change detection        | ACTIVE |
-| ADR-004  | Pattern storage + enrichment | Relational columns for vectors, Postgres-backed async queue    | ACTIVE |
+| ADR-004  | Pattern storage + enrichment | Relational columns for vectors, RabbitMQ-based async queue     | ACTIVE |
 | ADR-005  | Open vocabulary for language/domain | Kebab-case format only; vocabulary governed externally  | SUPERSEDED |
 | ADR-006  | 204 No Content on PUT        | Full-replacement PUT with no body; client issues GET if needed | ACTIVE |
 | ADR-007  | Config-driven vocabulary enforcement | Allow-lists in config; handler enforces; empty list = open | ACTIVE |

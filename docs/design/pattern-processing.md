@@ -386,13 +386,13 @@ flowchart LR
 **Why in-process?**
 
 - **Low volume expected**: Pattern creates/updates are infrequent (not hundreds per day)
-- **Simpler deployment**: Single container, no external message broker
-- **Postgres-backed queue**: Job queue persists in Postgres for reliability
-- **Easy to migrate**: Can extract to separate service later if needed
+- **Simpler deployment**: Single container with RabbitMQ as the only additional dependency
+- **RabbitMQ-based queue**: API publishes enrichment jobs to a RabbitMQ queue (`enrichment-jobs`); the enricher subscribes
+- **Reliable delivery**: RabbitMQ ensures single delivery per consumer, preventing duplicate processing
 
 ### Job Queue Design
 
-Use a Postgres-backed job queue (no external message broker required):
+The enrichment jobs table tracks job status (the actual job delivery uses RabbitMQ):
 
 ```sql
 CREATE TABLE enrichment_jobs (
@@ -419,82 +419,41 @@ CREATE UNIQUE INDEX idx_enrichment_jobs_unique_pending ON enrichment_jobs (patte
     WHERE status IN ('pending', 'processing');
 ```
 
-Worker polling:
+Job delivery via RabbitMQ:
 
-```sql
--- Claim next available job (with row-level locking)
-UPDATE enrichment_jobs
-SET status = 'processing',
-    started_at = NOW(),
-    attempts = attempts + 1
-WHERE id = (
-    SELECT id FROM enrichment_jobs
-    WHERE status = 'pending'
-      AND scheduled_for <= NOW()
-      AND attempts < max_attempts
-    ORDER BY scheduled_for
-    FOR UPDATE SKIP LOCKED
-    LIMIT 1
-)
-RETURNING *;
-```
+The enrichment worker subscribes to the `enrichment-jobs` RabbitMQ queue. When the API creates a pattern, it publishes an enrichment job message to this queue. The worker receives the message and processes the enrichment.
 
 ### Scaling and Concurrency
 
-When running multiple Mnemonic instances (pods), all instances can safely process enrichment jobs concurrently without duplicate processing. This is achieved through Postgres row-level locking.
+When running multiple enricher instances (pods), all instances can safely process enrichment jobs concurrently without duplicate processing. This is achieved through RabbitMQ's message delivery guarantees.
 
-#### How Multi-Pod Job Claiming Works
+#### How Multi-Pod Job Processing Works
 
 ```mermaid
 sequenceDiagram
-    participant Pod1 as Mnemonic Pod 1
-    participant Pod2 as Mnemonic Pod 2
-    participant PG as Postgres
+    participant API as Admin API
+    participant RMQ as RabbitMQ
+    participant Pod1 as Enricher Pod 1
+    participant Pod2 as Enricher Pod 2
 
-    Note over Pod1,Pod2: Both pods poll for jobs simultaneously
+    API->>RMQ: Publish Job A
+    API->>RMQ: Publish Job B
 
-    Pod1->>PG: SELECT ... FOR UPDATE SKIP LOCKED
-    Pod2->>PG: SELECT ... FOR UPDATE SKIP LOCKED
-
-    Note over PG: Postgres locks row for Pod 1
-    PG-->>Pod1: Returns Job A (locked)
-
-    Note over PG: Pod 2 skips locked row, gets next
-    PG-->>Pod2: Returns Job B (locked)
-
-    Pod1->>PG: UPDATE job A status = 'processing'
-    Pod2->>PG: UPDATE job B status = 'processing'
+    Note over RMQ: RabbitMQ delivers one message per consumer
+    RMQ->>Pod1: Deliver Job A
+    RMQ->>Pod2: Deliver Job B
 
     Note over Pod1,Pod2: Each pod processes different jobs
 ```
 
-#### The FOR UPDATE SKIP LOCKED Guarantee
+#### RabbitMQ Delivery Guarantee
 
-The key SQL construct that prevents duplicate processing:
+RabbitMQ ensures single delivery per consumer, which prevents duplicate processing:
 
-```sql
-SELECT id FROM enrichment_jobs
-WHERE status = 'pending'
-  AND scheduled_for <= NOW()
-  AND attempts < max_attempts
-ORDER BY scheduled_for
-FOR UPDATE SKIP LOCKED  -- Critical: skips rows locked by other transactions
-LIMIT 1
-```
-
-**What `FOR UPDATE SKIP LOCKED` does:**
-
-| Behavior      | Description                                                              |
-| ------------- | ------------------------------------------------------------------------ |
-| `FOR UPDATE`  | Locks the selected row for the duration of the transaction               |
-| `SKIP LOCKED` | If another transaction holds a lock on a row, skip it instead of waiting |
-
-This means:
-
-- **No duplicate processing**: Two pods cannot claim the same job
-- **No blocking**: Pods don't wait on each other; they grab different jobs
-- **No external coordination**: No distributed locks, Redis, or Zookeeper needed
-- **Automatic failover**: If a pod crashes mid-processing, the job remains in "processing" state and can be reclaimed after timeout
+- **No duplicate processing**: Each message is delivered to exactly one consumer
+- **No blocking**: Pods process different messages concurrently
+- **No external coordination**: RabbitMQ handles message distribution
+- **Automatic redelivery**: If a consumer disconnects without acknowledging, the message is redelivered to another consumer
 
 #### Job Timeout and Recovery
 
