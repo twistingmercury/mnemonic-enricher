@@ -634,7 +634,7 @@ All write operations use explicit transactions with appropriate isolation. The g
 | -------------------- | --------------- | ----------------------------------------------- |
 | Read queries         | Read Committed  | Default, sufficient for reads                   |
 | Write operations     | Read Committed  | Prevents dirty reads                            |
-| Enrichment job claim | Read Committed  | FOR UPDATE SKIP LOCKED prevents race conditions |
+| Enrichment job claim | Read Committed  | RabbitMQ single-delivery-per-consumer ensures no duplicates |
 
 #### Cross-Database Consistency
 

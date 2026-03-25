@@ -1424,8 +1424,8 @@ type EnrichmentJobRepository interface {
     GetByPatternID(ctx context.Context, patternID uuid.UUID) (*Job, error)
 
     // ClaimPending atomically claims a pending job for processing.
-    // Uses FOR UPDATE SKIP LOCKED for safe concurrent processing.
-    // Returns nil if no pending jobs are available.
+    // Note: In practice, jobs are delivered via RabbitMQ subscription.
+    // This method exists for fallback/testing but is not used by the worker.
     ClaimPending(ctx context.Context) (*Job, error)
 
     // MarkProcessing updates job status to processing with start time.
