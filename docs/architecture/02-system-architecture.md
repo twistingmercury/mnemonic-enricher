@@ -215,13 +215,13 @@ sequenceDiagram
     REST-->>Admin: 202 Accepted
 
     Note over WORKER: Async enrichment
-    WORKER->>PG: Claim job (FOR UPDATE SKIP LOCKED)
+    RMQ->>WORKER: Deliver enrichment job message
     WORKER->>OPENAI: Generate embedding
     OPENAI-->>WORKER: vector(1536)
     WORKER->>PG: Store embedding, status: enriched
     WORKER->>NEO: Create knowledge graph nodes/relationships
     NEO-->>WORKER: Success
-    WORKER->>PG: Job completed
+    WORKER->>PG: Update job status
 ```
 
 ## Component Interactions
@@ -366,6 +366,6 @@ Mnemonic is stateless — all state lives in Postgres and Neo4j — so multiple 
 Two areas to review when scaling out:
 
 - **Connection pool sizing**: Each instance holds its own connection pool. With N instances, total connections to Postgres and Neo4j multiply by N. See [Data Architecture - Connection Pool Configuration](04-data-architecture.md#connection-pool-configuration) for pool sizing guidance.
-- **Background enrichment workers**: The enrichment worker uses `FOR UPDATE SKIP LOCKED` when claiming jobs, which is already part of the MVP design. This ensures safe concurrent access across instances without duplicate processing.
+- **Background enrichment workers**: The enrichment worker subscribes to a RabbitMQ queue for job delivery, which is already part of the MVP design. This ensures safe concurrent access across instances without duplicate processing.
 
 **Next:** [Communication Patterns](03-communication-patterns.md)

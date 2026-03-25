@@ -297,7 +297,7 @@ Skills may have child files (scripts, references, assets) stored in the `skill_f
 
 Background processing queue for pattern enrichment. See [ADR-004](00-architectural-decisions.md#adr-004) for the queue design.
 
-**Schema:** Postgres-backed queue using `FOR UPDATE SKIP LOCKED` for safe concurrent processing. Retry with exponential backoff (max 3 attempts). `pattern_id` is nullable (was NOT NULL prior to migration 000009). `chunk_id` (FK to `pattern_chunks.id`, nullable) is set for chunk-level enrichment jobs; `pattern_id` is set for legacy jobs. CASCADE delete on parent pattern or chunk.
+**Schema:** RabbitMQ message queue for reliable job delivery and concurrent processing. Retry with exponential backoff (max 3 attempts). `pattern_id` is nullable (was NOT NULL prior to migration 000009). `chunk_id` (FK to `pattern_chunks.id`, nullable) is set for chunk-level enrichment jobs; `pattern_id` is set for legacy jobs. CASCADE delete on parent pattern or chunk.
 
 **Uniqueness:** A partial unique index prevents duplicate pending or processing jobs for the same pattern:
 
@@ -479,6 +479,7 @@ sequenceDiagram
     participant ADMIN as Admin Tool
     participant API as Mnemonic Admin API
     participant PG as Postgres
+    participant RMQ as RabbitMQ
     participant WORKER as Background Worker
     participant OPENAI as OpenAI API
     participant PGV as PGVector
@@ -486,11 +487,11 @@ sequenceDiagram
 
     ADMIN->>API: POST /v1/api/patterns
     API->>PG: INSERT pattern (status: pending)
-    API->>PG: INSERT enrichment_job
+    API->>RMQ: Publish enrichment job message
     API-->>ADMIN: 202 Accepted
 
-    Note over WORKER,PG: Async Processing
-    WORKER->>PG: Claim job (FOR UPDATE SKIP LOCKED)
+    Note over WORKER,RMQ: Async Processing
+    RMQ->>WORKER: Deliver enrichment job message
     WORKER->>PG: Load pattern content
     WORKER->>WORKER: Split content at H2 headings into chunks
     loop For each chunk
@@ -504,7 +505,7 @@ sequenceDiagram
     Note over WORKER,NEO: Compute RELATED_TO edges between<br/>this pattern and others sharing concepts
     WORKER->>NEO: MERGE RELATED_TO edges (shared-concept patterns)
     WORKER->>PG: UPDATE pattern status = 'enriched'
-    WORKER->>PG: UPDATE job status = 'completed'
+    WORKER->>RMQ: Acknowledge message
 ```
 
 ##### Skill Create
