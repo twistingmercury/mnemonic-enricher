@@ -363,15 +363,16 @@ Where `graph_score` would consider direct agent association relevance, hop dista
 
 > **Architecture Reference:** [Deployment Architecture - Component Deployment](../../architecture/06-deployment-architecture.md#component-deployment) | [Deployment Architecture - Scaling Considerations](../../architecture/06-deployment-architecture.md#scaling-considerations)
 
-### In-Process Background Worker
+### In-Process Background Worker with RabbitMQ
 
-The enrichment worker runs as a background goroutine within the same Mnemonic process:
+The enrichment worker runs as a background goroutine within the same Mnemonic process, consuming messages from RabbitMQ:
 
 ```mermaid
 flowchart LR
     subgraph mnemonic["Mnemonic Process"]
-        A[HTTP Handler] --> B[Job Queue]
-        B --> C[Background Worker<br/>goroutine]
+        A[HTTP Handler] --> RMQ_PUB[RabbitMQ Publisher]
+        RMQ_PUB --> RMQ["enrichment-jobs<br/>Queue"]
+        RMQ --> C[Background Worker<br/>goroutine]
         C --> D[Embedding Service]
         C --> E[Entity Extraction Service]
     end
@@ -383,152 +384,187 @@ flowchart LR
     H <--> E
 ```
 
-**Why in-process?**
+**Why RabbitMQ?**
 
-- **Low volume expected**: Pattern creates/updates are infrequent (not hundreds per day)
-- **Simpler deployment**: Single container, no external message broker
-- **Postgres-backed queue**: Job queue persists in Postgres for reliability
-- **Easy to migrate**: Can extract to separate service later if needed
+- **Reliable message delivery**: Messages persisted in RabbitMQ, safe across restarts
+- **Decoupled publisher/subscriber**: API publishes jobs; workers consume asynchronously
+- **Horizontal scaling**: Multiple workers can safely consume from the same queue
+- **Dead-letter handling**: Failed messages can be routed to DLQ for analysis
 
 ### Job Queue Design
 
-Use a Postgres-backed job queue (no external message broker required):
+Use a RabbitMQ message queue for reliable job delivery:
 
-```sql
-CREATE TABLE enrichment_jobs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pattern_id UUID REFERENCES patterns(id) ON DELETE CASCADE,     -- nullable
-    chunk_id UUID REFERENCES pattern_chunks(id) ON DELETE CASCADE, -- nullable
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending, processing, completed, failed
-    attempts INTEGER NOT NULL DEFAULT 0,
-    max_attempts INTEGER NOT NULL DEFAULT 3,
-    last_error TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    scheduled_for TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE
-);
+**RabbitMQ Queue Configuration:**
 
-CREATE INDEX idx_enrichment_jobs_pending ON enrichment_jobs (scheduled_for)
-    WHERE status = 'pending';
-CREATE INDEX idx_enrichment_jobs_pattern ON enrichment_jobs (pattern_id);
-CREATE INDEX idx_enrichment_jobs_processing ON enrichment_jobs (started_at)
-    WHERE status = 'processing';
-CREATE UNIQUE INDEX idx_enrichment_jobs_unique_pending ON enrichment_jobs (pattern_id)
-    WHERE status IN ('pending', 'processing');
+```go
+// Queue: enrichment-jobs
+// Properties:
+//   Durable: true (survives broker restarts)
+//   Exclusive: false (shareable among workers)
+//   AutoDelete: false (persists when empty)
+//   Arguments:
+//     x-max-priority: 10 (support priority levels)
+//     x-dead-letter-exchange: "enrichment-dlx" (failed messages route here)
+
+ch.QueueDeclare(
+    name: "enrichment-jobs",
+    durable: true,
+    exclusive: false,
+    autoDelete: false,
+    noWait: false,
+    args: amqp.Table{
+        "x-max-priority": 10,
+        "x-dead-letter-exchange": "enrichment-dlx",
+    },
+)
 ```
 
-Worker polling:
+**Message Format:**
 
-```sql
--- Claim next available job (with row-level locking)
-UPDATE enrichment_jobs
-SET status = 'processing',
-    started_at = NOW(),
-    attempts = attempts + 1
-WHERE id = (
-    SELECT id FROM enrichment_jobs
-    WHERE status = 'pending'
-      AND scheduled_for <= NOW()
-      AND attempts < max_attempts
-    ORDER BY scheduled_for
-    FOR UPDATE SKIP LOCKED
-    LIMIT 1
+```json
+{
+  "pattern_id": "550e8400-e29b-41d4-a716-446655440001",
+  "chunk_ids": ["..."],
+  "retry_count": 0,
+  "max_retries": 3,
+  "priority": 5
+}
+```
+
+Worker subscription:
+
+```go
+// Worker subscribes to queue with manual acknowledgment
+msgs, err := ch.Consume(
+    queue: "enrichment-jobs",
+    consumer: "",
+    autoAck: false,  // Manual acknowledgment required
+    exclusive: false,
+    noLocal: false,
+    noWait: false,
+    args: nil,
 )
-RETURNING *;
+
+// Process messages
+for msg := range msgs {
+    job := parseMessage(msg.Body)
+    err := processEnrichment(job)
+    if err != nil {
+        // Nack and requeue (with backoff via dead-letter)
+        msg.Nack(false, true)
+    } else {
+        // Acknowledge successful processing
+        msg.Ack(false)
+    }
+}
 ```
 
 ### Scaling and Concurrency
 
-When running multiple Mnemonic instances (pods), all instances can safely process enrichment jobs concurrently without duplicate processing. This is achieved through Postgres row-level locking.
+When running multiple Mnemonic instances (pods), all instances can safely process enrichment jobs concurrently without duplicate processing. This is achieved through RabbitMQ message delivery semantics.
 
-#### How Multi-Pod Job Claiming Works
+#### How Multi-Pod Message Consumption Works
 
 ```mermaid
 sequenceDiagram
     participant Pod1 as Mnemonic Pod 1
     participant Pod2 as Mnemonic Pod 2
-    participant PG as Postgres
+    participant RMQ as RabbitMQ
 
-    Note over Pod1,Pod2: Both pods poll for jobs simultaneously
+    Note over Pod1,Pod2: Both pods subscribe to enrichment-jobs queue
 
-    Pod1->>PG: SELECT ... FOR UPDATE SKIP LOCKED
-    Pod2->>PG: SELECT ... FOR UPDATE SKIP LOCKED
+    Pod1->>RMQ: Consume (ch.Consume)
+    Pod2->>RMQ: Consume (ch.Consume)
 
-    Note over PG: Postgres locks row for Pod 1
-    PG-->>Pod1: Returns Job A (locked)
+    Note over RMQ: RabbitMQ round-robins messages
+    RMQ-->>Pod1: Message A (Job A)
 
-    Note over PG: Pod 2 skips locked row, gets next
-    PG-->>Pod2: Returns Job B (locked)
+    RMQ-->>Pod2: Message B (Job B)
 
-    Pod1->>PG: UPDATE job A status = 'processing'
-    Pod2->>PG: UPDATE job B status = 'processing'
+    Pod1->>Pod1: Process Job A
+    Pod2->>Pod2: Process Job B
+
+    Pod1->>RMQ: Ack message (manual acknowledgment)
+    Pod2->>RMQ: Ack message (manual acknowledgment)
 
     Note over Pod1,Pod2: Each pod processes different jobs
 ```
 
-#### The FOR UPDATE SKIP LOCKED Guarantee
+#### RabbitMQ Message Delivery Guarantee
 
-The key SQL construct that prevents duplicate processing:
+RabbitMQ ensures exactly-once delivery with manual acknowledgment:
 
-```sql
-SELECT id FROM enrichment_jobs
-WHERE status = 'pending'
-  AND scheduled_for <= NOW()
-  AND attempts < max_attempts
-ORDER BY scheduled_for
-FOR UPDATE SKIP LOCKED  -- Critical: skips rows locked by other transactions
-LIMIT 1
+**RabbitMQ Delivery Flow:**
+
+```
+1. Message published to enrichment-jobs queue
+2. RabbitMQ marks message as "unacked"
+3. Worker receives message (ch.Consume)
+4. Worker processes enrichment job
+5. Worker explicitly acknowledges (msg.Ack)
+6. RabbitMQ removes message from queue
 ```
 
-**What `FOR UPDATE SKIP LOCKED` does:**
+**Failure Handling:**
 
-| Behavior      | Description                                                              |
-| ------------- | ------------------------------------------------------------------------ |
-| `FOR UPDATE`  | Locks the selected row for the duration of the transaction               |
-| `SKIP LOCKED` | If another transaction holds a lock on a row, skip it instead of waiting |
+- **Worker crashes mid-processing**: Message remains unacked; RabbitMQ redelivers to next worker
+- **Processing fails**: Worker nacks (msg.Nack); message requeued with backoff via dead-letter exchange
+- **Max retries exceeded**: Message moves to dead-letter queue for analysis
 
 This means:
 
-- **No duplicate processing**: Two pods cannot claim the same job
-- **No blocking**: Pods don't wait on each other; they grab different jobs
-- **No external coordination**: No distributed locks, Redis, or Zookeeper needed
-- **Automatic failover**: If a pod crashes mid-processing, the job remains in "processing" state and can be reclaimed after timeout
+- **No duplicate processing**: RabbitMQ ensures only one worker processes each message
+- **No blocking**: Workers don't wait on each other; RabbitMQ distributes messages asynchronously
+- **Automatic failover**: If a pod crashes, unacked messages are redelivered to other workers
+- **Backpressure handling**: Dead-letter exchange manages retries with exponential backoff
 
-#### Job Timeout and Recovery
+#### Message Timeout and Recovery
 
-To handle crashed workers, implement a job timeout mechanism:
+To handle crashed workers, RabbitMQ uses message time-to-live (TTL) and dead-letter exchange:
 
-```sql
--- Reclaim stale jobs (stuck in "processing" for too long)
-UPDATE enrichment_jobs
-SET status = 'pending',
-    scheduled_for = NOW() + INTERVAL '30 seconds'
-WHERE status = 'processing'
-  AND started_at < NOW() - INTERVAL '5 minutes'
-  AND attempts < max_attempts;
+```go
+// Configure message TTL (5 minutes for processing timeout)
+// Configure dead-letter exchange for redelivery
+ch.ExchangeDeclare(
+    name: "enrichment-dlx",
+    kind: "direct",
+    durable: true,
+)
+
+// When worker nacks or TTL expires, message goes to DLX
+// DLX has configurable backoff before redelivery
+// After max retries, message moves to poison-pill queue for analysis
 ```
 
-Run this query periodically (e.g., every minute) to recover jobs from crashed workers.
+**Retry Strategy:**
+
+- First attempt: Immediate delivery
+- Retry 1: After 30 seconds (via dead-letter with TTL)
+- Retry 2: After 60 seconds
+- Retry 3: After 120 seconds
+- Max retries exceeded: Move to `enrichment-failed` queue for manual inspection
 
 #### Horizontal Scaling Behavior
 
 | Pods   | Behavior                                       |
 | ------ | ---------------------------------------------- |
-| 1 pod  | Default 2 workers process jobs concurrently    |
-| 2 pods | Jobs distributed automatically; ~2x throughput |
-| N pods | Jobs distributed across N pods; ~Nx throughput |
+| 1 pod  | Single worker consumes from queue               |
+| 2 pods | Jobs distributed round-robin; ~2x throughput  |
+| N pods | Jobs distributed round-robin; ~Nx throughput  |
 
 **Note**: Throughput scales linearly until limited by:
 
+- RabbitMQ channel limits and memory
 - OpenAI API rate limits (shared across all pods)
 - Postgres connection pool exhaustion
 - Neo4j write capacity
 
+RabbitMQ automatically distributes messages across connected consumers (worker goroutines) in round-robin fashion without requiring external coordination.
+
 ### Future Scaling: Dedicated Enrichment Processor
 
-For larger deployments or separation of concerns, the enrichment worker can be extracted to a dedicated service:
+For larger deployments or separation of concerns, the enrichment worker can be extracted to a dedicated service that consumes from RabbitMQ:
 
 ```mermaid
 flowchart TB
@@ -538,18 +574,26 @@ flowchart TB
         A3[API Pod N]
     end
 
+    subgraph rmq["RabbitMQ Message Broker"]
+        Q["enrichment-jobs<br/>Queue"]
+        DLX["enrichment-dlx<br/>(Dead-Letter Exchange)"]
+    end
+
     subgraph worker["Enrichment Processor (Separate Service)"]
         W1[Worker Pod 1]
         W2[Worker Pod 2]
     end
 
-    PG[(Postgres<br/>Job Queue)]
+    PG[(Postgres)]
     OpenAI[OpenAI API]
     Neo4j[(Neo4j)]
 
-    A1 --> PG
-    A2 --> PG
-    A3 --> PG
+    A1 -->|Publish| Q
+    A2 -->|Publish| Q
+    A3 -->|Publish| Q
+
+    Q -->|Consume| W1
+    Q -->|Consume| W2
 
     W1 <--> PG
     W2 <--> PG
@@ -557,13 +601,17 @@ flowchart TB
     W2 <--> OpenAI
     W1 <--> Neo4j
     W2 <--> Neo4j
+
+    W1 -->|Nack (retry)| DLX
+    W2 -->|Nack (retry)| DLX
+    DLX -->|Requeue with backoff| Q
 ```
 
 **Why consider a dedicated enrichment processor?**
 
 | Benefit                    | Description                                                             |
 | -------------------------- | ----------------------------------------------------------------------- |
-| **Separation of concerns** | API handles requests; processor handles background work                 |
+| **Separation of concerns** | API publishes jobs to queue; processors consume asynchronously           |
 | **Independent scaling**    | Scale API pods for request volume; scale workers for enrichment backlog |
 | **Resource isolation**     | LLM calls don't compete with API request handling                       |
 | **Deployment flexibility** | Update enrichment logic without redeploying API                         |
@@ -579,10 +627,10 @@ flowchart TB
 **Migration path:**
 
 1. Extract worker code to separate Go binary (same codebase, different main)
-2. Deploy as separate container/service
+2. Deploy as separate container/service that connects to RabbitMQ
 3. Remove in-process worker from API pods
-4. Scale worker pods based on queue depth
-5. Consider Redis or SQS if Postgres queue becomes bottleneck
+4. Scale worker pods based on queue depth and monitoring
+5. RabbitMQ ensures safe distributed processing without code changes
 
 ## External Service Dependencies
 

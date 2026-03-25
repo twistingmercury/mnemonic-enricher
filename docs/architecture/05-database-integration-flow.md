@@ -197,17 +197,18 @@ INSERT INTO enrichment_jobs (pattern_id, status)
 VALUES ('550e8400-e29b-41d4-a716-446655440001', 'pending');
 ```
 
-**Step 2: Background Worker Claims Job**
+**Step 2: Background Worker Receives Job from RabbitMQ**
 
 ```go
-// Worker claims job atomically
-SELECT id, pattern_id
-FROM enrichment_jobs
-WHERE status = 'pending'
-  AND scheduled_for <= NOW()
-ORDER BY scheduled_for
-LIMIT 1
-FOR UPDATE SKIP LOCKED;
+// Worker subscribes to enrichment-jobs queue
+// When message arrives from RabbitMQ:
+msg := ch.Consume(
+    queue: "enrichment-jobs",
+    autoAck: false,
+    exclusive: false,
+)
+// Receive enrichment job details from message
+job := parseJobMessage(msg)
 ```
 
 **Step 3: Generate Embedding (OpenAI API)**
