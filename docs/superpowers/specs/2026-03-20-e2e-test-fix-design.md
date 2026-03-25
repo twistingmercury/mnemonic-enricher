@@ -64,13 +64,13 @@ New package at `src/tests/e2e/openai-stub/main.go`. Listens on `:8090`.
 
 **Routes:**
 
-`POST /v1/embeddings` — returns a canned embedding vector of length **2000** (matching `DefaultOpenAIEmbeddingDimensions`), all values `0.1`. The length must match the configured dimensions so the `UpdateEmbedding` call does not fail with a Postgres vector dimension mismatch:
+`POST /v1/embeddings` — returns a canned embedding vector of length 2000 (matching `DefaultOpenAIEmbeddingDimensions`), all values `0.1`. The length must match the configured dimensions so the `UpdateEmbedding` call does not fail with a Postgres vector dimension mismatch:
 
 ```json
 {
   "object": "list",
   "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.1, ...]}],
-  "model": "text-embedding-3-small",
+  "model": "text-embedding-3-large",
   "usage": {"prompt_tokens": 8, "total_tokens": 8}
 }
 ```

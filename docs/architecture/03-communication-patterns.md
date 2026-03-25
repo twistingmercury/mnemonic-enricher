@@ -66,7 +66,7 @@ sequenceDiagram
     CC->>MCP: search_patterns(query, limit)
 
     MCP->>OPENAI: Generate query embedding
-    OPENAI-->>MCP: vector(1536)
+    OPENAI-->>MCP: vector(2000)
     MCP->>PG: Semantic search (PGVector)
     PG-->>MCP: Top N patterns
 
@@ -142,7 +142,7 @@ sequenceDiagram
     Note over WORKER: Async enrichment
     WORKER->>PG: Claim job (FOR UPDATE SKIP LOCKED)
     WORKER->>OPENAI: Generate embedding
-    OPENAI-->>WORKER: vector(1536)
+    OPENAI-->>WORKER: vector(2000)
     WORKER->>PG: Store embedding, status: enriched
     WORKER->>NEO: Create knowledge graph nodes/relationships
     NEO-->>WORKER: Success

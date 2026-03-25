@@ -90,15 +90,16 @@ Configure the worker via environment variables. All values have sensible default
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MNEMONIC_OPENAI_API_KEY` | (required) | OpenAI API key |
-| `MNEMONIC_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `MNEMONIC_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-large` | Embedding model |
+| `MNEMONIC_OPENAI_EMBEDDING_DIMENSIONS` | `2000` | Vector dimensions for embedding generation (must match database column) |
 | `MNEMONIC_OPENAI_EXTRACTION_MODEL` | `gpt-4o-mini` | Extraction model for concept analysis |
 
 ### Enrichment Worker
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MNEMONIC_ENRICHMENT_WORKER_COUNT` | `4` | Number of concurrent enrichment workers |
-| `MNEMONIC_ENRICHMENT_JOB_TIMEOUT` | `30s` | Job processing timeout |
+| `MNEMONIC_ENRICHMENT_WORKER_COUNT` | `2` | Number of concurrent enrichment workers |
+| `MNEMONIC_ENRICHMENT_JOB_TIMEOUT` | `5m` | Job processing timeout |
 | `MNEMONIC_ENRICHMENT_MAX_ATTEMPTS` | `3` | Retry attempts per job |
 
 ## Key Considerations
