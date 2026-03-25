@@ -598,8 +598,8 @@ Embedding generation requires the OpenAI API:
 | ------------------ | --------------------------------------------------------- |
 | **Service**        | OpenAI API                                                |
 | **Endpoint**       | `https://api.openai.com/v1/embeddings`                    |
-| **Model**          | `text-embedding-3-small`                                  |
-| **Dimensions**     | 1536 (must match PGVector column configuration)           |
+| **Model**          | `text-embedding-3-large`                                  |
+| **Dimensions**     | 2000 (must match PGVector column configuration)           |
 | **Authentication** | API key required                                          |
 | **Cost**           | ~$0.0001 per pattern (~$0.00002 per 1K tokens)            |
 | **Rate limits**    | 3,000 RPM / 1,000,000 TPM (tier 1), higher for paid tiers |
@@ -649,8 +649,8 @@ openai:
   api_key: ""
 
   # Embedding configuration
-  embedding_model: text-embedding-3-small
-  embedding_dimensions: 1536 # Must match PGVector column size
+  embedding_model: text-embedding-3-large
+  embedding_dimensions: 2000 # Must match PGVector column size
 
   # Entity extraction configuration
   extraction_model: gpt-4o-mini
@@ -731,7 +731,7 @@ Before deploying pattern enrichment, verify:
 - [ ] Rate limits appropriate for expected load
 - [ ] Cost monitoring/alerting configured
 - [ ] Network egress to `api.openai.com` allowed
-- [ ] PGVector dimensions match configured embedding dimensions (1536)
+- [ ] PGVector dimensions match configured embedding dimensions (2000)
 - [ ] Enrichment job table created in Postgres
 - [ ] Neo4j instance provisioned and accessible
 - [ ] Neo4j credentials configured
@@ -785,9 +785,9 @@ WITH (m = 16, ef_construction = 64);
 The vector column must be configured for the same dimensions as the embedding model:
 
 ```sql
--- Must match embedding.dimensions in config (default: 1536)
+-- Must match embedding.dimensions in config (default: 2000)
 -- Column lives in pattern_chunks, not patterns
-ALTER TABLE pattern_chunks ADD COLUMN embedding vector(1536);
+ALTER TABLE pattern_chunks ADD COLUMN embedding vector(2000);
 ```
 
 ### Neo4j Schema

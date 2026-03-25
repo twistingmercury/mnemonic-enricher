@@ -121,7 +121,7 @@ graph TB
 
 **Stores:**
 
-- Pattern chunk embeddings (one vector per H2 section, 1536 dimensions, OpenAI text-embedding-3-small)
+- Pattern chunk embeddings (one vector per H2 section, 2000 dimensions, OpenAI text-embedding-3-large)
 - Prompt embeddings for semantic search (generated at query time)
 
 **Why PGVector over Dedicated Vector DB:**
@@ -206,7 +206,7 @@ erDiagram
         string section_title
         int chunk_index
         text content
-        vector embedding "1536 dimensions"
+        vector embedding "2000 dimensions"
         enum enrichment_status "pending|enriched|failed"
         text enrichment_error
         timestamptz enriched_at
@@ -269,7 +269,7 @@ Patterns use relational columns (not JSONB) for enrichment tracking and metadata
 
 **Schema:** Columns include `id`, `name`, `description`, `content`, `tags` (JSONB), `entity_type`, `language`, `domain`, `version`, `related_patterns` (JSONB), `enrichment_status`, `enrichment_error`, `enriched_at`, `created_at`, `updated_at`. The `embedding` column was removed in migration 000009; vector embeddings now live in `pattern_chunks`.
 
-**Pattern chunks:** Each pattern is split at H2 headings into one or more rows in `pattern_chunks`. Each chunk holds its own `embedding vector(1536)` for section-level semantic search. If a pattern has no H2 headings it is stored as a single chunk. The `enrichment_status` on the pattern reflects aggregate chunk status: a pattern is `enriched` when all its chunks are enriched.
+**Pattern chunks:** Each pattern is split at H2 headings into one or more rows in `pattern_chunks`. Each chunk holds its own `embedding vector(2000)` for section-level semantic search. If a pattern has no H2 headings it is stored as a single chunk. The `enrichment_status` on the pattern reflects aggregate chunk status: a pattern is `enriched` when all its chunks are enriched.
 
 **Enrichment States:**
 
@@ -495,7 +495,7 @@ sequenceDiagram
     WORKER->>WORKER: Split content at H2 headings into chunks
     loop For each chunk
         WORKER->>OPENAI: Generate chunk embedding
-        OPENAI-->>WORKER: vector(1536)
+        OPENAI-->>WORKER: vector(2000)
         WORKER->>PGV: Store chunk embedding in pattern_chunks
     end
     WORKER->>OPENAI: Extract entities from full content (LLM)
@@ -538,7 +538,7 @@ sequenceDiagram
 
     CC->>MCP: search_patterns(query)
     MCP->>OPENAI: Generate query embedding
-    OPENAI-->>MCP: vector(1536)
+    OPENAI-->>MCP: vector(2000)
     MCP->>PGV: Chunk-level semantic search (pattern_chunks)
     PGV-->>MCP: ChunkMatch results
     MCP-->>CC: Chunk results (section_title, pattern metadata)

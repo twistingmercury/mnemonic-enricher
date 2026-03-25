@@ -157,8 +157,8 @@ database:
 openai:
   # API key should be set via MNEMONIC_OPENAI_API_KEY
   api_key: ""
-  embedding_model: text-embedding-3-small
-  embedding_dimensions: 1536
+  embedding_model: text-embedding-3-large
+  embedding_dimensions: 2000
   extraction_model: gpt-4o-mini
   max_requests_per_minute: 500
   retry_attempts: 3
@@ -328,8 +328,8 @@ The otelx package handles the complexity of OpenTelemetry SDK setup, allowing Mn
 | `database.neo4j.max_connection_pool_size`       | int      | `50`                     | `MNEMONIC_DATABASE_NEO4J_MAX_CONNECTION_POOL_SIZE`       | Neo4j max connection pool size                                                              |
 | `database.neo4j.connection_acquisition_timeout` | duration | `60s`                    | `MNEMONIC_DATABASE_NEO4J_CONNECTION_ACQUISITION_TIMEOUT` | Neo4j connection acquisition timeout                                                        |
 | `openai.api_key`                                | string   | `""`                     | `MNEMONIC_OPENAI_API_KEY`                                | OpenAI API key                                                                              |
-| `openai.embedding_model`                        | string   | `text-embedding-3-small` | `MNEMONIC_OPENAI_EMBEDDING_MODEL`                        | Embedding model                                                                             |
-| `openai.embedding_dimensions`                   | int      | `1536`                   | `MNEMONIC_OPENAI_EMBEDDING_DIMENSIONS`                   | Embedding dimensions                                                                        |
+| `openai.embedding_model`                        | string   | `text-embedding-3-large` | `MNEMONIC_OPENAI_EMBEDDING_MODEL`                        | Embedding model                                                                             |
+| `openai.embedding_dimensions`                   | int      | `2000`                   | `MNEMONIC_OPENAI_EMBEDDING_DIMENSIONS`                   | Embedding dimensions                                                                        |
 | `openai.extraction_model`                       | string   | `gpt-4o-mini`            | `MNEMONIC_OPENAI_EXTRACTION_MODEL`                       | Entity extraction model                                                                     |
 | `rate_limit.enabled`                            | bool     | `false`                  | `MNEMONIC_RATE_LIMIT_ENABLED`                            | Enable rate limiting (Post-MVP)                                                             |
 | `rate_limit.requests_per_second`                | int      | `100`                    | `MNEMONIC_RATE_LIMIT_REQUESTS_PER_SECOND`                | Global RPS limit (Post-MVP)                                                                 |
@@ -488,8 +488,8 @@ func setDefaults(v *viper.Viper) {
     v.SetDefault("database.neo4j.connection_acquisition_timeout", "60s")
 
     // OpenAI defaults
-    v.SetDefault("openai.embedding_model", "text-embedding-3-small")
-    v.SetDefault("openai.embedding_dimensions", 1536)
+    v.SetDefault("openai.embedding_model", "text-embedding-3-large")
+    v.SetDefault("openai.embedding_dimensions", 2000)
     v.SetDefault("openai.extraction_model", "gpt-4o-mini")
     v.SetDefault("openai.max_requests_per_minute", 500)
     v.SetDefault("openai.retry_attempts", 3)
@@ -639,18 +639,18 @@ Error: configuration validation failed:
 
 ```text
 # Example dimension mismatch error
-FATAL: embedding dimension mismatch: config specifies 3072 dimensions but PGVector column is defined as vector(1536)
+FATAL: embedding dimension mismatch: config specifies 3072 dimensions but PGVector column is defined as vector(2000)
 ```
 
 **Failure mode without validation**: If dimension validation were skipped, the system would fail at runtime with cryptic Postgres errors when attempting to store embeddings:
 
 ```text
-ERROR: expected 1536 dimensions, not 3072 (SQLSTATE XX000)
+ERROR: expected 2000 dimensions, not 3072 (SQLSTATE XX000)
 ```
 
 This error occurs during pattern enrichment, making it difficult to diagnose as a configuration issue.
 
-**Schema migration required**: Changing the `embedding_dimensions` setting (for example, when switching from `text-embedding-ada-002` with 1536 dimensions to `text-embedding-3-large` with 3072 dimensions) requires a database schema migration:
+**Schema migration required**: Changing the `embedding_dimensions` setting (for example, when switching from `text-embedding-3-large` with 2000 dimensions to a different model with different dimensions) requires a database schema migration:
 
 1. Update the PGVector column definition to match the new dimensions
 2. Re-generate embeddings for all existing patterns
@@ -665,6 +665,8 @@ See [Pattern Processing - PGVector Configuration](pattern-processing.md#pgvector
 | `text-embedding-ada-002` | 1536       |
 | `text-embedding-3-small` | 1536       |
 | `text-embedding-3-large` | 3072       |
+
+Current Mnemonic default: `text-embedding-3-large` with 2000 dimensions (using Matryoshka truncation).
 
 ## Configuration Model
 

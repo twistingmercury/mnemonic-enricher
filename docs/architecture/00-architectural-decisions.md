@@ -164,7 +164,7 @@ This pattern disallows consecutive hyphens and trailing hyphens, ensuring clean 
 
 ### Context
 
-Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, skills) which use JSONB documents, patterns require relational columns for vector search, enrichment tracking, and graph relationships. The enrichment pipeline must generate embeddings via an external API (OpenAI text-embedding-3-small) and extract entities for the Neo4j knowledge graph.
+Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, skills) which use JSONB documents, patterns require relational columns for vector search, enrichment tracking, and graph relationships. The enrichment pipeline must generate embeddings via an external API (OpenAI text-embedding-3-large) and extract entities for the Neo4j knowledge graph.
 
 ### Decision
 
@@ -173,7 +173,7 @@ Patterns are the core knowledge artifacts in Mnemonic. Unlike entities (agents, 
 **Pattern table design:**
 
 - UUID primary key (patterns may be renamed; need stable reference)
-- Separate `embedding` column (vector(1536)) for PGVector similarity search
+- Separate `embedding` column (vector(2000)) for PGVector similarity search
 - Enrichment status tracking (`pending` / `enriched` / `failed`) with error capture
 - JSONB `tags` column for flexible categorization
 

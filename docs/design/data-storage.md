@@ -402,8 +402,8 @@ create table if not exists patterns (
     -- Categorization tags (JSON array)
     tags jsonb not null default '[]'::jsonb,
 
-    -- Vector embedding for semantic search (1536 dimensions for text-embedding-3-small)
-    embedding vector(1536),
+    -- Vector embedding for semantic search (2000 dimensions for text-embedding-3-large)
+    embedding vector(2000),
 
     -- Enrichment processing state
     enrichment_status varchar(20) not null default 'pending',
@@ -425,7 +425,7 @@ create table if not exists patterns (
 );
 
 comment on table patterns is 'Reusable context patterns for prompt enrichment';
-comment on column patterns.embedding is 'Vector embedding (1536d) for semantic similarity search';
+comment on column patterns.embedding is 'Vector embedding (2000d) for semantic similarity search';
 comment on column patterns.enrichment_status is 'Processing state: pending, enriched, or failed';
 ```
 
