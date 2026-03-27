@@ -1,6 +1,6 @@
-// Package patterns provides HTTP handlers for pattern CRUD, association,
-// and search operations. It registers Gin routes for creating, reading,
-// updating, deleting, and searching context patterns via the REST API.
+// Package patterns provides HTTP handlers for pattern CRUD and search
+// operations. It registers Gin routes for creating, reading, updating,
+// deleting, and searching context patterns via the REST API.
 //
 // Documentation:
 //   - API: docs/api/openapi/mnemonic-v1.yaml (Pattern Endpoints)
@@ -59,55 +59,37 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/patterns/:id", h.Get)
 	rg.PUT("/patterns/:id", h.Update)
 	rg.DELETE("/patterns/:id", h.Delete)
-	rg.GET("/patterns/:id/agents", h.GetAgentAssociations)
-	rg.PUT("/patterns/:id/agents", h.SetAgentAssociations)
 	rg.GET("/patterns/:id/chunks", h.GetChunks)
 }
 
 // --- Request/Response Types ---
 
-// associationRequest maps a single agent association in create/update requests.
-// @Description Agent association entry used in pattern create and update requests
-type associationRequest struct {
-	AgentName string  `json:"agent_name" binding:"required"`
-	Relevance float64 `json:"relevance"`
-}
-
 // patternCreateRequest maps the OpenAPI PatternCreate schema.
 // @Description Request body for creating a new pattern
 type patternCreateRequest struct {
-	Name              string               `json:"name"`
-	Description       *string              `json:"description"`
-	Content           string               `json:"content"`
-	Tags              []string             `json:"tags"`
-	AgentAssociations []associationRequest `json:"agent_associations"`
-	EntityType        string               `json:"entity_type"`
-	Language          string               `json:"language"`
-	Domain            string               `json:"domain"`
-	Version           *string              `json:"version"`
-	RelatedPatterns   []string             `json:"related_patterns"`
+	Name            string   `json:"name"`
+	Description     *string  `json:"description"`
+	Content         string   `json:"content"`
+	Tags            []string `json:"tags"`
+	EntityType      string   `json:"entity_type"`
+	Language        string   `json:"language"`
+	Domain          string   `json:"domain"`
+	Version         *string  `json:"version"`
+	RelatedPatterns []string `json:"related_patterns"`
 }
 
 // patternUpdateRequest maps the OpenAPI PatternUpdate schema.
 // @Description Request body for updating an existing pattern
 type patternUpdateRequest struct {
-	Name              string               `json:"name"`
-	Description       *string              `json:"description"`
-	Content           string               `json:"content"`
-	Tags              []string             `json:"tags"`
-	AgentAssociations []associationRequest `json:"agent_associations"`
-	EntityType        string               `json:"entity_type"`
-	Language          string               `json:"language"`
-	Domain            string               `json:"domain"`
-	Version           *string              `json:"version"`
-	RelatedPatterns   []string             `json:"related_patterns"`
-}
-
-// associationResponse represents a single agent association in a pattern response.
-// @Description Agent association returned in pattern responses
-type associationResponse struct {
-	AgentName string  `json:"agent_name"`
-	Relevance float64 `json:"relevance"`
+	Name            string   `json:"name"`
+	Description     *string  `json:"description"`
+	Content         string   `json:"content"`
+	Tags            []string `json:"tags"`
+	EntityType      string   `json:"entity_type"`
+	Language        string   `json:"language"`
+	Domain          string   `json:"domain"`
+	Version         *string  `json:"version"`
+	RelatedPatterns []string `json:"related_patterns"`
 }
 
 // relatedPatternResponse represents a related pattern entry in graph context.
@@ -161,7 +143,6 @@ type patternResponse struct {
 	Domain           string                `json:"domain"`
 	Version          *string               `json:"version"`
 	RelatedPatterns  []string              `json:"related_patterns"`
-	AgentAssociation []associationResponse `json:"agent_associations,omitempty"`
 	EnrichmentStatus string                `json:"enrichment_status"`
 	EnrichmentError  *string               `json:"enrichment_error"`
 	EnrichedAt       *string               `json:"enriched_at"`
@@ -188,18 +169,6 @@ type patternSummaryResponse struct {
 type patternListResponse struct {
 	Data       []patternSummaryResponse `json:"data"`
 	Pagination handlers.Pagination      `json:"pagination"`
-}
-
-// associationsRequest is the request body for setting agent associations on a pattern.
-// @Description Request body for setting agent associations on a pattern
-type associationsRequest struct {
-	Associations []associationRequest `json:"associations" binding:"required"`
-}
-
-// associationsResponse is the response body for agent association operations.
-// @Description Response body containing the current agent associations for a pattern
-type associationsResponse struct {
-	Associations []associationResponse `json:"associations"`
 }
 
 // searchResultResponse represents a single semantic search result.
@@ -234,7 +203,7 @@ type searchResponse struct {
 
 // --- Converters ---
 
-func toPatternResponse(p *patternrepo.Pattern, graph *patternsvc.GraphContext, assocs []associationResponse) patternResponse {
+func toPatternResponse(p *patternrepo.Pattern, graph *patternsvc.GraphContext) patternResponse {
 	tags := p.Tags
 	if tags == nil {
 		tags = []string{}
@@ -256,7 +225,6 @@ func toPatternResponse(p *patternrepo.Pattern, graph *patternsvc.GraphContext, a
 		Domain:           p.Domain,
 		Version:          p.Version,
 		RelatedPatterns:  relatedPatterns,
-		AgentAssociation: assocs,
 		EnrichmentStatus: p.EnrichmentStatus,
 		EnrichmentError:  p.EnrichmentError,
 		CreatedAt:        p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
@@ -306,32 +274,6 @@ func toPatternSummary(p *patternrepo.Pattern) patternSummaryResponse {
 		CreatedAt:        p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:        p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
-}
-
-func toAssociationResponses(assocs []patternrepo.AgentAssociation, names map[uuid.UUID]string) []associationResponse {
-	result := make([]associationResponse, len(assocs))
-	for i, a := range assocs {
-		result[i] = associationResponse{
-			AgentName: names[a.AgentID],
-			Relevance: a.Relevance,
-		}
-	}
-	return result
-}
-
-func toAssociationInputs(reqs []associationRequest) []patternsvc.AssociationInput {
-	inputs := make([]patternsvc.AssociationInput, len(reqs))
-	for i, r := range reqs {
-		relevance := r.Relevance
-		if relevance == 0 {
-			relevance = 1.0
-		}
-		inputs[i] = patternsvc.AssociationInput{
-			AgentName: r.AgentName,
-			Relevance: relevance,
-		}
-	}
-	return inputs
 }
 
 // validatePatternFields checks field-level constraints for create/update and
@@ -404,23 +346,6 @@ func (h *Handler) validatePatternFields(name, content string, description *strin
 	return errs
 }
 
-// validateAssociationRelevance checks that each association has a relevance value
-// in the range [0.0, 1.0] and returns FieldErrors for any that are out of range.
-// fieldPrefix is the JSON field name used in error paths (e.g., "agent_associations" or "associations").
-func validateAssociationRelevance(assocs []associationRequest, fieldPrefix string) []handlers.FieldError {
-	var errs []handlers.FieldError
-	for i, assoc := range assocs {
-		if assoc.Relevance < 0.0 || assoc.Relevance > 1.0 {
-			errs = append(errs, handlers.FieldError{
-				Field:   fmt.Sprintf("%s[%d].relevance", fieldPrefix, i),
-				Code:    "INVALID_VALUE",
-				Message: "relevance must be a number between 0 and 1",
-			})
-		}
-	}
-	return errs
-}
-
 // --- Handlers ---
 
 // Create handles POST /v1/api/patterns.
@@ -447,56 +372,30 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if assocErrs := validateAssociationRelevance(req.AgentAssociations, "agent_associations"); len(assocErrs) > 0 {
-		handlers.RespondValidationError(c, "The request body contains invalid fields", assocErrs)
-		return
-	}
-
 	if req.Tags == nil {
 		req.Tags = []string{}
-	}
-	if req.AgentAssociations == nil {
-		req.AgentAssociations = []associationRequest{}
 	}
 	if req.RelatedPatterns == nil {
 		req.RelatedPatterns = []string{}
 	}
 
 	pattern, err := h.patternSvc.Create(c.Request.Context(), patternsvc.CreateInput{
-		Name:              req.Name,
-		Description:       req.Description,
-		Content:           req.Content,
-		Tags:              req.Tags,
-		AgentAssociations: toAssociationInputs(req.AgentAssociations),
-		EntityType:        req.EntityType,
-		Language:          req.Language,
-		Domain:            req.Domain,
-		Version:           req.Version,
-		RelatedPatterns:   req.RelatedPatterns,
+		Name:            req.Name,
+		Description:     req.Description,
+		Content:         req.Content,
+		Tags:            req.Tags,
+		EntityType:      req.EntityType,
+		Language:        req.Language,
+		Domain:          req.Domain,
+		Version:         req.Version,
+		RelatedPatterns: req.RelatedPatterns,
 	})
 	if err != nil {
 		handlers.RespondError(c, err)
 		return
 	}
 
-	// Fetch agent associations to include in the response.
-	ctx := c.Request.Context()
-	pgAssocs, err := h.patternSvc.GetAgentAssociations(ctx, pattern.ID)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-	agentIDs := make([]uuid.UUID, len(pgAssocs))
-	for i, a := range pgAssocs {
-		agentIDs[i] = a.AgentID
-	}
-	names, err := h.patternSvc.ResolveAgentNames(ctx, agentIDs)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	resp := toPatternResponse(pattern, nil, toAssociationResponses(pgAssocs, names))
+	resp := toPatternResponse(pattern, nil)
 	c.Header("Location", fmt.Sprintf("/v1/api/patterns/%s", pattern.ID))
 	c.JSON(http.StatusAccepted, resp)
 }
@@ -615,24 +514,7 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 
-	// Fetch agent associations separately (handler composition per design doc).
-	pgAssocs, err := h.patternSvc.GetAgentAssociations(ctx, id)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	agentIDs := make([]uuid.UUID, len(pgAssocs))
-	for i, a := range pgAssocs {
-		agentIDs[i] = a.AgentID
-	}
-	names, err := h.patternSvc.ResolveAgentNames(ctx, agentIDs)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	resp := toPatternResponse(pattern, graph, toAssociationResponses(pgAssocs, names))
+	resp := toPatternResponse(pattern, graph)
 
 	// Populate chunks; degrade gracefully if the chunk service fails.
 	chunks, chunkErr := h.patternSvc.ListChunks(ctx, id)
@@ -687,32 +569,23 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	if assocErrs := validateAssociationRelevance(req.AgentAssociations, "agent_associations"); len(assocErrs) > 0 {
-		handlers.RespondValidationError(c, "The request body contains invalid fields", assocErrs)
-		return
-	}
-
 	if req.Tags == nil {
 		req.Tags = []string{}
-	}
-	if req.AgentAssociations == nil {
-		req.AgentAssociations = []associationRequest{}
 	}
 	if req.RelatedPatterns == nil {
 		req.RelatedPatterns = []string{}
 	}
 
 	if _, err := h.patternSvc.Update(c.Request.Context(), id, patternsvc.UpdateInput{
-		Name:              req.Name,
-		Description:       req.Description,
-		Content:           req.Content,
-		Tags:              req.Tags,
-		AgentAssociations: toAssociationInputs(req.AgentAssociations),
-		EntityType:        req.EntityType,
-		Language:          req.Language,
-		Domain:            req.Domain,
-		Version:           req.Version,
-		RelatedPatterns:   req.RelatedPatterns,
+		Name:            req.Name,
+		Description:     req.Description,
+		Content:         req.Content,
+		Tags:            req.Tags,
+		EntityType:      req.EntityType,
+		Language:        req.Language,
+		Domain:          req.Domain,
+		Version:         req.Version,
+		RelatedPatterns: req.RelatedPatterns,
 	}); err != nil {
 		handlers.RespondError(c, err)
 		return
@@ -741,86 +614,6 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.patternSvc.Delete(c.Request.Context(), id); err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	c.Status(http.StatusNoContent)
-}
-
-// GetAgentAssociations handles GET /v1/api/patterns/:id/agents.
-//
-// @Summary      Get pattern agent associations
-// @Tags         Patterns
-// @Produce      json
-// @Param        id   path      string  true  "Pattern UUID"
-// @Success      200  {object}  associationsResponse
-// @Failure      400  {object}  handlers.ProblemDetail
-// @Failure      404  {object}  handlers.ProblemDetail
-// @Failure      500  {object}  handlers.ProblemDetail
-// @Router       /patterns/{id}/agents [get]
-func (h *Handler) GetAgentAssociations(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		handlers.RespondValidationError(c, "Invalid pattern ID format", []handlers.FieldError{
-			{Field: "id", Code: "INVALID_FORMAT", Message: "id must be a valid UUID"},
-		})
-		return
-	}
-
-	pgAssocs, err := h.patternSvc.GetAgentAssociations(c.Request.Context(), id)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	agentIDs := make([]uuid.UUID, len(pgAssocs))
-	for i, a := range pgAssocs {
-		agentIDs[i] = a.AgentID
-	}
-	names, err := h.patternSvc.ResolveAgentNames(c.Request.Context(), agentIDs)
-	if err != nil {
-		handlers.RespondError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, associationsResponse{Associations: toAssociationResponses(pgAssocs, names)})
-}
-
-// SetAgentAssociations handles PUT /v1/api/patterns/:id/agents.
-//
-// @Summary      Set pattern agent associations
-// @Tags         Patterns
-// @Accept       json
-// @Param        id    path      string               true  "Pattern UUID"
-// @Param        body  body      associationsRequest  true  "Agent associations to set"
-// @Success      204   "No Content"
-// @Failure      400   {object}  handlers.ProblemDetail
-// @Failure      404   {object}  handlers.ProblemDetail
-// @Failure      500   {object}  handlers.ProblemDetail
-// @Router       /patterns/{id}/agents [put]
-func (h *Handler) SetAgentAssociations(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		handlers.RespondValidationError(c, "Invalid pattern ID format", []handlers.FieldError{
-			{Field: "id", Code: "INVALID_FORMAT", Message: "id must be a valid UUID"},
-		})
-		return
-	}
-
-	var req associationsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		handlers.RespondValidationError(c, "The request body contains invalid fields", nil)
-		return
-	}
-
-	if assocErrs := validateAssociationRelevance(req.Associations, "associations"); len(assocErrs) > 0 {
-		handlers.RespondValidationError(c, "The request body contains invalid fields", assocErrs)
-		return
-	}
-
-	inputs := toAssociationInputs(req.Associations)
-	if err := h.patternSvc.SetAgentAssociations(c.Request.Context(), id, inputs); err != nil {
 		handlers.RespondError(c, err)
 		return
 	}
@@ -881,7 +674,6 @@ func (h *Handler) GetChunks(c *gin.Context) {
 // @Param        limit      query     int      false  "Max results (1–50, default 10)"
 // @Param        threshold  query     number   false  "Similarity threshold (0–1, default 0.7)"
 // @Param        tags       query     string   false  "Comma-separated tag filter"
-// @Param        agent      query     string   false  "Agent name filter"
 // @Param        language   query     string   false  "Language filter"
 // @Param        domain     query     string   false  "Domain filter"
 // @Success      200        {object}  searchResponse
@@ -938,7 +730,6 @@ func (h *Handler) Search(c *gin.Context) {
 		Limit:     limit,
 		Threshold: threshold,
 		Tags:      tags,
-		AgentName: c.Query("agent"),
 		Language:  c.Query("language"),
 		Domain:    c.Query("domain"),
 	})

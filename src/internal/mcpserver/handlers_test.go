@@ -127,36 +127,6 @@ func TestHandleSearchPatterns_NoResults(t *testing.T) {
 	deps.AssertExpectations(t)
 }
 
-func TestHandleSearchPatterns_WithAgentFilter(t *testing.T) {
-	t.Parallel()
-
-	deps := new(mockToolDeps)
-	handler := handleSearchPatterns(deps, noopLogger(), 0.5)
-
-	searchResult := &searchsvc.SearchResult{
-		Query: "testing",
-		Matches: []*searchsvc.ChunkMatch{
-			{PatternName: "test-pattern", Content: "Test content", Similarity: 0.88},
-		},
-	}
-	deps.On("SearchPatterns", mock.Anything, searchsvc.SearchOptions{
-		Query:     "testing",
-		Limit:     10,
-		Threshold: 0.5,
-		AgentName: "go-engineer",
-	}).Return(searchResult, nil)
-
-	result, _, err := handler(context.Background(), nil, SearchPatternsInput{
-		Query: "testing",
-		Agent: "go-engineer",
-	})
-
-	require.NoError(t, err)
-	text := extractTextContent(t, result)
-	assert.Contains(t, text, "filtered by agent: go-engineer")
-	deps.AssertExpectations(t)
-}
-
 func TestHandleSearchPatterns_ServiceUnavailable(t *testing.T) {
 	t.Parallel()
 

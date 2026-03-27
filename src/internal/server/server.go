@@ -21,7 +21,6 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
 	rabbitmq "github.com/twistingmercury/mnemonic-enricher/internal/queue/rabbitmq"
-	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjobrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
@@ -166,7 +165,6 @@ func wireDependencies(
 	logger zerolog.Logger,
 ) (*enricher.Worker, error) {
 	// Repositories.
-	agentRepo := agentrepo.NewRepository(pgPool)
 	patternRepo := patternrepo.NewRepository(pgPool)
 	enrichmentJobRepo := enrichmentjobrepo.NewRepository(pgPool)
 	graphRepo := graphrepo.NewRepository(neo4jDriver, cfg.Database.Neo4j.Database)
@@ -178,7 +176,7 @@ func wireDependencies(
 
 	// Enrichment service.
 	enrichmentSvc, err := enrichmentsvc.New(
-		enrichmentJobRepo, patternRepo, agentRepo, graphRepo,
+		enrichmentJobRepo, patternRepo, graphRepo,
 		embeddingSvc, extractionSvc,
 		cfg.Enrichment, chunkRepo, logger,
 	)

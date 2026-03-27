@@ -9,7 +9,4 @@ var (
 
 	// ErrNameExists is returned when attempting to create a pattern with a name that already exists.
 	ErrNameExists = errors.New("pattern name already exists")
-
-	// ErrAgentNotFound is returned when one or more agent IDs do not exist in the agents table.
-	ErrAgentNotFound = errors.New("agent not found")
 )

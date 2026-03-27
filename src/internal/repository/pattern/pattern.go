@@ -101,12 +101,3 @@ type Match struct {
 	// Similarity is the cosine similarity score (0.0-1.0, where 1.0 is identical).
 	Similarity float64
 }
-
-// AgentAssociation represents a pattern-agent relationship with relevance score.
-type AgentAssociation struct {
-	// AgentID is the UUID of the associated agent.
-	AgentID uuid.UUID `db:"agent_id"`
-
-	// Relevance is the relevance score from 0.0 (minimally relevant) to 1.0 (highly relevant).
-	Relevance float64 `db:"relevance"`
-}

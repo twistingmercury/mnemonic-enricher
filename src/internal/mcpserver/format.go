@@ -13,7 +13,7 @@ import (
 // formatSearchResults formats search results as markdown for LLM consumption.
 // Similarity scores are displayed as percentages (e.g., "92% match") because
 // the single vector similarity score is intuitive as a percentage.
-func formatSearchResults(result *searchsvc.SearchResult, agentFilter string) string {
+func formatSearchResults(result *searchsvc.SearchResult) string {
 	if len(result.Matches) == 0 {
 		return fmt.Sprintf("No patterns found matching '%s'.", result.Query)
 	}
@@ -29,9 +29,6 @@ func formatSearchResults(result *searchsvc.SearchResult, agentFilter string) str
 	sections := len(result.Matches)
 
 	header := fmt.Sprintf("Found %d sections across %d patterns matching '%s'", sections, distinctPatterns, result.Query)
-	if agentFilter != "" {
-		header += fmt.Sprintf(" (filtered by agent: %s)", agentFilter)
-	}
 	sb.WriteString(header)
 	sb.WriteString(":\n")
 

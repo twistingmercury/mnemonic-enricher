@@ -10,7 +10,7 @@ BUILD_VER="${BUILD_VER:-$(git -C "${PROJ_ROOT}" describe --tags --abbrev=0 2>/de
 BUILD_DATE="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 BUILD_COMMIT="${BUILD_COMMIT:-$(git -C "${PROJ_ROOT}" rev-parse --short HEAD 2>/dev/null || echo 'unknown')}"
 
-IMAGE_NAME="${IMAGE_NAME:-ghcr.io/twistingmercury/mnemonic}"
+IMAGE_NAME="${IMAGE_NAME:-ghcr.io/twistingmercury/mnemonic-enrichment}"
 IMAGE_TAG="${IMAGE_TAG:-$BUILD_VER}"
 
 E2E_COMPOSE_FILE="${PROJ_ROOT}/tests/docker-compose.yaml"

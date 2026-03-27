@@ -90,7 +90,7 @@ func (e *openaiEmbedding) Embed(ctx context.Context, text string) ([]float32, er
 
 	for attempt := range e.retries + 1 {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,err)
+			return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed, err)
 		}
 
 		embedding, err := e.doEmbed(ctx, text)
@@ -103,13 +103,13 @@ func (e *openaiEmbedding) Embed(ctx context.Context, text string) ([]float32, er
 		if attempt < e.retries {
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,ctx.Err())
+				return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed, ctx.Err())
 			case <-time.After(e.retryDelay):
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed,lastErr)
+	return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed, lastErr)
 }
 
 // doEmbed performs a single embedding API call.

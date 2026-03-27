@@ -56,7 +56,6 @@ func handleSearchPatterns(deps ToolDependencies, logger zerolog.Logger, defaultT
 			Limit:     limit,
 			Threshold: threshold,
 			Tags:      input.Tags,
-			AgentName: input.Agent,
 			Language:  input.Language,
 			Domain:    input.Domain,
 		})
@@ -64,7 +63,7 @@ func handleSearchPatterns(deps ToolDependencies, logger zerolog.Logger, defaultT
 			return nil, nil, mapServiceError(err)
 		}
 
-		markdown := formatSearchResults(result, input.Agent)
+		markdown := formatSearchResults(result)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: markdown}},
 		}, nil, nil

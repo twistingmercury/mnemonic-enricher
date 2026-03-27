@@ -17,16 +17,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
-	"github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	"github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
 )
 
 const (
 	// testPatternPrefix is used to identify test-created patterns for cleanup.
 	testPatternPrefix = "test-integration-pattern-"
-
-	// testAgentPrefix is used to identify test-created agents for cleanup.
-	testAgentPrefix = "test-integration-agent-"
 )
 
 // setupTestDB creates a connection pool to the test database.
@@ -68,34 +64,10 @@ func cleanupTestPatterns(t *testing.T, pool *pgxpool.Pool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Delete pattern_agent_associations first due to foreign key constraint
-	assocQuery := fmt.Sprintf(`
-		DELETE FROM pattern_agent_associations
-		WHERE pattern_id IN (SELECT id FROM patterns WHERE name LIKE '%s%%')
-	`, testPatternPrefix)
-	_, err := pool.Exec(ctx, assocQuery)
-	if err != nil {
-		t.Logf("warning: failed to cleanup test pattern associations: %v", err)
-	}
-
 	query := fmt.Sprintf("DELETE FROM patterns WHERE name LIKE '%s%%'", testPatternPrefix)
-	_, err = pool.Exec(ctx, query)
-	if err != nil {
-		t.Logf("warning: failed to cleanup test patterns: %v", err)
-	}
-}
-
-// cleanupTestAgents removes all agents with the test prefix from the database.
-func cleanupTestAgents(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := fmt.Sprintf("DELETE FROM agents WHERE name LIKE '%s%%'", testAgentPrefix)
 	_, err := pool.Exec(ctx, query)
 	if err != nil {
-		t.Logf("warning: failed to cleanup test agents: %v", err)
+		t.Logf("warning: failed to cleanup test patterns: %v", err)
 	}
 }
 
@@ -107,23 +79,6 @@ func testIntegrationPattern(suffix string) *pattern.Pattern {
 		Description: &desc,
 		Content:     "This is test content for integration testing. It should be stored correctly.",
 		Tags:        []string{"test", "integration"},
-	}
-}
-
-// testIntegrationAgent creates a sample agent for integration testing with a unique name.
-// Uses the JSONB document model established in Phase 4.
-func testIntegrationAgent(suffix string) *agent.Agent {
-	definition := []byte(`{
-		"description": "Integration test agent: ` + suffix + `",
-		"system_prompt": "You are a test assistant for integration testing.",
-		"model": "sonnet",
-		"allowed_tools": [],
-		"version": "1.0.0"
-	}`)
-	return &agent.Agent{
-		Name:       testAgentPrefix + suffix,
-		Definition: definition,
-		CRC64:      "12345678901234",
 	}
 }
 
@@ -498,106 +453,6 @@ func TestIntegration_UpdateEnrichmentStatus(t *testing.T) {
 	})
 }
 
-func TestIntegration_AgentAssociations(t *testing.T) {
-	pool := setupTestDB(t)
-	cleanupTestPatterns(t, pool)
-	cleanupTestAgents(t, pool)
-	t.Cleanup(func() {
-		cleanupTestPatterns(t, pool)
-		cleanupTestAgents(t, pool)
-	})
-
-	patternRepo := pattern.NewRepository(pool)
-	agentRepo := agent.NewRepository(pool)
-	ctx := context.Background()
-
-	// Create test agents first
-	agent1 := testIntegrationAgent("assoc-agent-1")
-	agent2 := testIntegrationAgent("assoc-agent-2")
-	require.NoError(t, agentRepo.Create(ctx, agent1))
-	require.NoError(t, agentRepo.Create(ctx, agent2))
-
-	// Create a test pattern
-	testPattern := testIntegrationPattern("assoc-test")
-	require.NoError(t, patternRepo.Create(ctx, testPattern))
-
-	t.Run("sets and gets agent associations", func(t *testing.T) {
-		associations := []pattern.AgentAssociation{
-			{AgentID: agent1.ID, Relevance: 0.9},
-			{AgentID: agent2.ID, Relevance: 0.7},
-		}
-
-		err := patternRepo.SetAgentAssociations(ctx, testPattern.ID, associations)
-		require.NoError(t, err)
-
-		// Retrieve associations
-		retrieved, err := patternRepo.GetAgentAssociations(ctx, testPattern.ID)
-		require.NoError(t, err)
-		require.Len(t, retrieved, 2)
-
-		// Should be ordered by relevance DESC
-		assert.Equal(t, agent1.ID, retrieved[0].AgentID)
-		assert.InDelta(t, 0.9, retrieved[0].Relevance, 0.01)
-		assert.Equal(t, agent2.ID, retrieved[1].AgentID)
-		assert.InDelta(t, 0.7, retrieved[1].Relevance, 0.01)
-	})
-
-	t.Run("replaces existing associations", func(t *testing.T) {
-		// Set initial associations
-		initial := []pattern.AgentAssociation{
-			{AgentID: agent1.ID, Relevance: 0.9},
-		}
-		require.NoError(t, patternRepo.SetAgentAssociations(ctx, testPattern.ID, initial))
-
-		// Replace with new associations
-		replacement := []pattern.AgentAssociation{
-			{AgentID: agent2.ID, Relevance: 0.5},
-		}
-		err := patternRepo.SetAgentAssociations(ctx, testPattern.ID, replacement)
-		require.NoError(t, err)
-
-		// Verify replacement
-		retrieved, err := patternRepo.GetAgentAssociations(ctx, testPattern.ID)
-		require.NoError(t, err)
-		require.Len(t, retrieved, 1)
-		assert.Equal(t, agent2.ID, retrieved[0].AgentID)
-	})
-
-	t.Run("clears associations with empty slice", func(t *testing.T) {
-		// Set some associations first
-		associations := []pattern.AgentAssociation{
-			{AgentID: agent1.ID, Relevance: 0.9},
-		}
-		require.NoError(t, patternRepo.SetAgentAssociations(ctx, testPattern.ID, associations))
-
-		// Clear with empty slice
-		err := patternRepo.SetAgentAssociations(ctx, testPattern.ID, []pattern.AgentAssociation{})
-		require.NoError(t, err)
-
-		// Verify cleared
-		retrieved, err := patternRepo.GetAgentAssociations(ctx, testPattern.ID)
-		require.NoError(t, err)
-		assert.Empty(t, retrieved)
-	})
-
-	t.Run("returns ErrNotFound for nonexistent pattern", func(t *testing.T) {
-		associations := []pattern.AgentAssociation{
-			{AgentID: agent1.ID, Relevance: 0.9},
-		}
-		err := patternRepo.SetAgentAssociations(ctx, uuid.New(), associations)
-		assert.ErrorIs(t, err, pattern.ErrNotFound)
-	})
-
-	t.Run("returns empty slice for pattern with no associations", func(t *testing.T) {
-		newPattern := testIntegrationPattern("no-assoc")
-		require.NoError(t, patternRepo.Create(ctx, newPattern))
-
-		associations, err := patternRepo.GetAgentAssociations(ctx, newPattern.ID)
-		require.NoError(t, err)
-		assert.Empty(t, associations)
-	})
-}
-
 func TestIntegration_Exists(t *testing.T) {
 	pool := setupTestDB(t)
 	cleanupTestPatterns(t, pool)
@@ -835,7 +690,6 @@ func TestIntegration_ListWithEnrichmentStatusFilter(t *testing.T) {
 
 	enrichedPattern := testIntegrationPattern("status-filter-enriched")
 	require.NoError(t, repo.Create(ctx, enrichedPattern))
-	require.NoError(t, repo.UpdateEmbedding(ctx, enrichedPattern.ID, createNormalizedEmbedding(0)))
 	require.NoError(t, repo.UpdateEnrichmentStatus(ctx, enrichedPattern.ID, "enriched", nil))
 
 	failedPattern := testIntegrationPattern("status-filter-failed")

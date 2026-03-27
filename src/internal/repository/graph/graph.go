@@ -41,26 +41,3 @@ type RelatedPattern struct {
 	// ConceptNames contains the names of the shared concepts between the two patterns.
 	ConceptNames []string
 }
-
-// PatternRelevance represents a pattern associated with an agent and its relevance score.
-type PatternRelevance struct {
-	// ID is the unique identifier of the pattern.
-	ID uuid.UUID
-
-	// Name is the human-readable name of the pattern.
-	Name string
-
-	// Relevance is the relevance score for the agent (0.0 to 1.0).
-	Relevance float64
-}
-
-// AgentAssociation represents a pattern-agent relationship with relevance score.
-// This type is intentionally duplicated from the pattern package to maintain
-// package independence and avoid circular dependencies between repository packages.
-type AgentAssociation struct {
-	// AgentName is the name of the agent.
-	AgentName string
-
-	// Relevance is the relevance score (0.0 to 1.0).
-	Relevance float64
-}

@@ -1,6 +1,6 @@
 // Package handlers provides shared utilities for REST handler packages.
-// Sub-packages under handlers implement the actual endpoint logic for agents,
-// patterns, skills, skill files, and search.
+// Sub-packages under handlers implement the actual endpoint logic for
+// patterns and search.
 //
 // Documentation:
 //   - API: docs/api/openapi/mnemonic-v1.yaml
