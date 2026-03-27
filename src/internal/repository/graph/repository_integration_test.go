@@ -776,9 +776,6 @@ func TestIntegration_ContextCancellation(t *testing.T) {
 		err := repo.SyncConcepts(ctx, uuid.New(), testConcepts("timeout"))
 		assert.Error(t, err)
 	})
-
-		assert.Error(t, err)
-	})
 }
 
 func TestIntegration_InputValidation(t *testing.T) {
@@ -823,10 +820,6 @@ func TestIntegration_InputValidation(t *testing.T) {
 
 	t.Run("SyncConcepts rejects nil UUID", func(t *testing.T) {
 		err := repo.SyncConcepts(ctx, uuid.Nil, testConcepts("any"))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
-	})
-
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 	})
