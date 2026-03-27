@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	// testIntegrationAgentPrefix is used to identify test-created agents for cleanup.
-	testIntegrationAgentPrefix = "test-integration-"
-
 	// testIntegrationPatternPrefix is used to identify test-created patterns for cleanup.
 	testIntegrationPatternPrefix = "test-integration-pattern-"
 
@@ -119,18 +116,6 @@ func setupNeo4jDriver(t *testing.T) (neo4j.DriverWithContext, graph.Repository) 
 	return driver, repo
 }
 
-// cleanupNeo4jTestAgents removes all agents with the test prefix from Neo4j.
-func cleanupNeo4jTestAgents(t *testing.T, repo graph.Repository) {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Best-effort cleanup: delete any agents we created.
-	_ = repo.DeleteAgent(ctx, testIntegrationAgentPrefix+"healthcheck")
-	_ = repo.DeleteAgent(ctx, testIntegrationAgentPrefix+"crud")
-}
-
 // cleanupNeo4jTestData uses direct Cypher queries to remove all test-created
 // nodes and relationships from Neo4j. This ensures cleanup even when repository
 // methods are the subject under test and may be broken.
@@ -153,15 +138,6 @@ func cleanupNeo4jTestData(t *testing.T, driver neo4j.DriverWithContext) {
 		_, err := tx.Run(ctx,
 			`MATCH (p:Pattern) WHERE p.name STARTS WITH $prefix DETACH DELETE p`,
 			map[string]any{"prefix": testIntegrationPatternPrefix},
-		)
-		return nil, err
-	})
-
-	// Remove test agents and their relationships.
-	_, _ = session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-		_, err := tx.Run(ctx,
-			`MATCH (a:Agent) WHERE a.name STARTS WITH $prefix DETACH DELETE a`,
-			map[string]any{"prefix": testIntegrationAgentPrefix},
 		)
 		return nil, err
 	})
@@ -314,36 +290,6 @@ func TestIntegration_HealthCheck(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestIntegration_SyncAgent_DeleteAgent(t *testing.T) {
-	repo := setupNeo4j(t)
-	cleanupNeo4jTestAgents(t, repo)
-	t.Cleanup(func() { cleanupNeo4jTestAgents(t, repo) })
-
-	ctx := context.Background()
-	agentName := testIntegrationAgentPrefix + "crud"
-
-	t.Run("sync creates agent", func(t *testing.T) {
-		err := repo.SyncAgent(ctx, agentName)
-		require.NoError(t, err)
-	})
-
-	t.Run("sync is idempotent", func(t *testing.T) {
-		err := repo.SyncAgent(ctx, agentName)
-		require.NoError(t, err)
-	})
-
-	t.Run("delete removes agent", func(t *testing.T) {
-		err := repo.DeleteAgent(ctx, agentName)
-		require.NoError(t, err)
-	})
-
-	t.Run("delete nonexistent is not an error", func(t *testing.T) {
-		// Neo4j MATCH + DETACH DELETE is a no-op for nonexistent nodes.
-		err := repo.DeleteAgent(ctx, agentName)
-		assert.NoError(t, err)
-	})
-}
-
 func TestIntegration_SyncPattern_DeletePattern(t *testing.T) {
 	driver, repo := setupNeo4jDriver(t)
 	cleanupNeo4jTestData(t, driver)
@@ -464,93 +410,6 @@ func TestIntegration_SyncConcepts(t *testing.T) {
 	})
 }
 
-func TestIntegration_SetPatternAgentRelevance(t *testing.T) {
-	driver, repo := setupNeo4jDriver(t)
-	cleanupNeo4jTestData(t, driver)
-	t.Cleanup(func() { cleanupNeo4jTestData(t, driver) })
-
-	ctx := context.Background()
-
-	// Create prerequisite agents and a pattern.
-	agent1 := testIntegrationAgentPrefix + "relevance-a"
-	agent2 := testIntegrationAgentPrefix + "relevance-b"
-	agent3 := testIntegrationAgentPrefix + "relevance-c"
-	require.NoError(t, repo.SyncAgent(ctx, agent1))
-	require.NoError(t, repo.SyncAgent(ctx, agent2))
-	require.NoError(t, repo.SyncAgent(ctx, agent3))
-
-	p := testPattern("relevance")
-	require.NoError(t, repo.SyncPattern(ctx, p))
-
-	t.Run("sets relevance for pattern-agent pairs", func(t *testing.T) {
-		associations := []graph.AgentAssociation{
-			{AgentName: agent1, Relevance: 0.9},
-			{AgentName: agent2, Relevance: 0.7},
-		}
-
-		err := repo.SetPatternAgentRelevance(ctx, p.ID, associations)
-		require.NoError(t, err)
-
-		// Verify via FindPatternsByAgent.
-		results, err := repo.FindPatternsByAgent(ctx, agent1, 10)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-		assert.Equal(t, p.ID, results[0].ID)
-		assert.InDelta(t, 0.9, results[0].Relevance, 0.01)
-	})
-
-	t.Run("updates relevance score", func(t *testing.T) {
-		associations := []graph.AgentAssociation{
-			{AgentName: agent1, Relevance: 0.5}, // changed from 0.9
-			{AgentName: agent2, Relevance: 0.7},
-		}
-
-		err := repo.SetPatternAgentRelevance(ctx, p.ID, associations)
-		require.NoError(t, err)
-
-		results, err := repo.FindPatternsByAgent(ctx, agent1, 10)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-		assert.InDelta(t, 0.5, results[0].Relevance, 0.01, "relevance should be updated to 0.5")
-	})
-
-	t.Run("diff-based sync adds new agent and removes old", func(t *testing.T) {
-		// Previous: agent1, agent2
-		// New: agent2, agent3
-		// Expected: agent1 removed, agent2 kept, agent3 added.
-		associations := []graph.AgentAssociation{
-			{AgentName: agent2, Relevance: 0.8},
-			{AgentName: agent3, Relevance: 0.6},
-		}
-
-		err := repo.SetPatternAgentRelevance(ctx, p.ID, associations)
-		require.NoError(t, err)
-
-		// agent1 should no longer see this pattern.
-		results, err := repo.FindPatternsByAgent(ctx, agent1, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "agent1 should have no patterns after removal")
-
-		// agent3 should now see this pattern.
-		results, err = repo.FindPatternsByAgent(ctx, agent3, 10)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-		assert.InDelta(t, 0.6, results[0].Relevance, 0.01)
-	})
-
-	t.Run("clears all associations with empty list", func(t *testing.T) {
-		err := repo.SetPatternAgentRelevance(ctx, p.ID, []graph.AgentAssociation{})
-		require.NoError(t, err)
-
-		results, err := repo.FindPatternsByAgent(ctx, agent2, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "agent2 should have no patterns after clearing")
-
-		results, err = repo.FindPatternsByAgent(ctx, agent3, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "agent3 should have no patterns after clearing")
-	})
-}
 
 func TestIntegration_FindRelatedPatterns(t *testing.T) {
 	driver, repo := setupNeo4jDriver(t)
@@ -803,74 +662,6 @@ func TestIntegration_GetPatternConcepts(t *testing.T) {
 	})
 }
 
-func TestIntegration_FindPatternsByAgent(t *testing.T) {
-	driver, repo := setupNeo4jDriver(t)
-	cleanupNeo4jTestData(t, driver)
-	t.Cleanup(func() { cleanupNeo4jTestData(t, driver) })
-
-	ctx := context.Background()
-
-	// Create agent and multiple patterns with different relevance scores.
-	agentName := testIntegrationAgentPrefix + "finder"
-	require.NoError(t, repo.SyncAgent(ctx, agentName))
-
-	pHigh := testPattern("agent-high")
-	pMed := testPattern("agent-med")
-	pLow := testPattern("agent-low")
-	require.NoError(t, repo.SyncPattern(ctx, pHigh))
-	require.NoError(t, repo.SyncPattern(ctx, pMed))
-	require.NoError(t, repo.SyncPattern(ctx, pLow))
-
-	// Set relevance: high=0.9, med=0.6, low=0.3
-	require.NoError(t, repo.SetPatternAgentRelevance(ctx, pHigh.ID, []graph.AgentAssociation{
-		{AgentName: agentName, Relevance: 0.9},
-	}))
-	require.NoError(t, repo.SetPatternAgentRelevance(ctx, pMed.ID, []graph.AgentAssociation{
-		{AgentName: agentName, Relevance: 0.6},
-	}))
-	require.NoError(t, repo.SetPatternAgentRelevance(ctx, pLow.ID, []graph.AgentAssociation{
-		{AgentName: agentName, Relevance: 0.3},
-	}))
-
-	t.Run("returns patterns ordered by relevance descending", func(t *testing.T) {
-		results, err := repo.FindPatternsByAgent(ctx, agentName, 10)
-		require.NoError(t, err)
-		require.Len(t, results, 3)
-
-		assert.Equal(t, pHigh.ID, results[0].ID)
-		assert.InDelta(t, 0.9, results[0].Relevance, 0.01)
-
-		assert.Equal(t, pMed.ID, results[1].ID)
-		assert.InDelta(t, 0.6, results[1].Relevance, 0.01)
-
-		assert.Equal(t, pLow.ID, results[2].ID)
-		assert.InDelta(t, 0.3, results[2].Relevance, 0.01)
-	})
-
-	t.Run("respects limit parameter", func(t *testing.T) {
-		results, err := repo.FindPatternsByAgent(ctx, agentName, 2)
-		require.NoError(t, err)
-		assert.Len(t, results, 2, "should return at most 2 results")
-		// The top 2 should be the highest relevance ones.
-		assert.Equal(t, pHigh.ID, results[0].ID)
-		assert.Equal(t, pMed.ID, results[1].ID)
-	})
-
-	t.Run("returns empty for agent with no patterns", func(t *testing.T) {
-		noPatternAgent := testIntegrationAgentPrefix + "no-patterns"
-		require.NoError(t, repo.SyncAgent(ctx, noPatternAgent))
-
-		results, err := repo.FindPatternsByAgent(ctx, noPatternAgent, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results)
-	})
-
-	t.Run("returns empty for nonexistent agent", func(t *testing.T) {
-		results, err := repo.FindPatternsByAgent(ctx, testIntegrationAgentPrefix+"does-not-exist", 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "nonexistent agent should return empty results")
-	})
-}
 
 func TestIntegration_CleanupOrphanedConcepts(t *testing.T) {
 	driver, repo := setupNeo4jDriver(t)
@@ -932,13 +723,6 @@ func TestIntegration_CleanupOrphanedConcepts(t *testing.T) {
 func TestIntegration_ContextCancellation(t *testing.T) {
 	repo := setupNeo4j(t)
 
-	t.Run("SyncAgent with cancelled context", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		err := repo.SyncAgent(ctx, testIntegrationAgentPrefix+"cancelled")
-		assert.Error(t, err)
-	})
 
 	t.Run("SyncPattern with cancelled context", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -957,13 +741,6 @@ func TestIntegration_ContextCancellation(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("FindPatternsByAgent with cancelled context", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		_, err := repo.FindPatternsByAgent(ctx, testIntegrationAgentPrefix+"cancelled", 10)
-		assert.Error(t, err)
-	})
 
 	t.Run("CleanupOrphanedConcepts with cancelled context", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1000,15 +777,6 @@ func TestIntegration_ContextCancellation(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("SetPatternAgentRelevance with expired timeout", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
-		defer cancel()
-
-		time.Sleep(1 * time.Millisecond)
-
-		err := repo.SetPatternAgentRelevance(ctx, uuid.New(), []graph.AgentAssociation{
-			{AgentName: "any", Relevance: 0.5},
-		})
 		assert.Error(t, err)
 	})
 }
@@ -1018,23 +786,8 @@ func TestIntegration_InputValidation(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("SyncAgent rejects empty name", func(t *testing.T) {
-		err := repo.SyncAgent(ctx, "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agentName must not be empty")
-	})
 
-	t.Run("SyncAgent rejects whitespace-only name", func(t *testing.T) {
-		err := repo.SyncAgent(ctx, "   ")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agentName must not be empty")
-	})
 
-	t.Run("DeleteAgent rejects empty name", func(t *testing.T) {
-		err := repo.DeleteAgent(ctx, "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agentName must not be empty")
-	})
 
 	t.Run("SyncPattern rejects nil pattern", func(t *testing.T) {
 		err := repo.SyncPattern(ctx, nil)
@@ -1074,10 +827,6 @@ func TestIntegration_InputValidation(t *testing.T) {
 		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 	})
 
-	t.Run("SetPatternAgentRelevance rejects nil UUID", func(t *testing.T) {
-		err := repo.SetPatternAgentRelevance(ctx, uuid.Nil, []graph.AgentAssociation{
-			{AgentName: "any", Relevance: 0.5},
-		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 	})
@@ -1100,17 +849,7 @@ func TestIntegration_InputValidation(t *testing.T) {
 		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 	})
 
-	t.Run("FindPatternsByAgent rejects empty agent name", func(t *testing.T) {
-		_, err := repo.FindPatternsByAgent(ctx, "", 10)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agentName must not be empty")
-	})
 
-	t.Run("FindPatternsByAgent rejects whitespace-only agent name", func(t *testing.T) {
-		_, err := repo.FindPatternsByAgent(ctx, "   ", 10)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agentName must not be empty")
-	})
 }
 
 func TestIntegration_ConcurrentOperations(t *testing.T) {
@@ -1187,26 +926,6 @@ func TestIntegration_EdgeCases(t *testing.T) {
 		assert.Empty(t, results, "pattern with no concepts should have no related patterns")
 	})
 
-	t.Run("SetPatternAgentRelevance with nil list", func(t *testing.T) {
-		agentName := testIntegrationAgentPrefix + "edge-agent"
-		require.NoError(t, repo.SyncAgent(ctx, agentName))
-
-		p := testPattern("edge-nil-assoc")
-		require.NoError(t, repo.SyncPattern(ctx, p))
-
-		// First set an association.
-		require.NoError(t, repo.SetPatternAgentRelevance(ctx, p.ID, []graph.AgentAssociation{
-			{AgentName: agentName, Relevance: 0.8},
-		}))
-
-		// Clear with nil (should behave like empty list).
-		err := repo.SetPatternAgentRelevance(ctx, p.ID, nil)
-		require.NoError(t, err)
-
-		results, err := repo.FindPatternsByAgent(ctx, agentName, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "nil associations should clear all relationships")
-	})
 
 	t.Run("SyncConcepts for pattern that does not exist in graph", func(t *testing.T) {
 		// SyncConcepts uses MATCH (p:Pattern {id: $patternId}) which will simply
@@ -1252,29 +971,6 @@ func TestIntegration_EdgeCases(t *testing.T) {
 		assert.Equal(t, int64(0), count, "concept relationships should be removed with pattern")
 	})
 
-	t.Run("DeleteAgent also removes relevance relationships", func(t *testing.T) {
-		agentName := testIntegrationAgentPrefix + "delete-with-rels"
-		require.NoError(t, repo.SyncAgent(ctx, agentName))
-
-		p := testPattern("agent-rel-delete")
-		require.NoError(t, repo.SyncPattern(ctx, p))
-
-		require.NoError(t, repo.SetPatternAgentRelevance(ctx, p.ID, []graph.AgentAssociation{
-			{AgentName: agentName, Relevance: 0.7},
-		}))
-
-		// Verify relationship exists.
-		results, err := repo.FindPatternsByAgent(ctx, agentName, 10)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-
-		// Delete the agent; DETACH DELETE removes agent and all its relationships.
-		require.NoError(t, repo.DeleteAgent(ctx, agentName))
-
-		results, err = repo.FindPatternsByAgent(ctx, agentName, 10)
-		require.NoError(t, err)
-		assert.Empty(t, results, "patterns should no longer be associated with deleted agent")
-	})
 
 	t.Run("concepts shared across patterns are not duplicated", func(t *testing.T) {
 		pX := testPattern("shared-concept-x")

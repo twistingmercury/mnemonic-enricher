@@ -38,12 +38,6 @@ type SessionFactory func(ctx context.Context) SessionExecutor
 
 // Repository defines data access operations for the Neo4j knowledge graph.
 type Repository interface {
-	// SyncAgent creates or updates an Agent node in the graph.
-	SyncAgent(ctx context.Context, agentName string) error
-
-	// DeleteAgent removes an Agent node and all its relationships from the graph.
-	DeleteAgent(ctx context.Context, agentName string) error
-
 	// SyncPattern creates or updates a Pattern node in the graph.
 	SyncPattern(ctx context.Context, pattern *Pattern) error
 
@@ -52,9 +46,6 @@ type Repository interface {
 
 	// SyncConcepts replaces all MENTIONED_IN relationships for a pattern with the provided concepts.
 	SyncConcepts(ctx context.Context, patternID uuid.UUID, concepts []Concept) error
-
-	// SetPatternAgentRelevance replaces all RELEVANT_FOR relationships for a pattern.
-	SetPatternAgentRelevance(ctx context.Context, patternID uuid.UUID, associations []AgentAssociation) error
 
 	// ComputeRelatedToEdges deletes existing RELATED_TO edges for the given pattern
 	// and recomputes them based on shared concepts. Only edges with similarity >= minSimilarity
@@ -68,9 +59,6 @@ type Repository interface {
 	// FindRelatedPatterns finds patterns related to the given pattern using pre-computed RELATED_TO edges.
 	// Results include similarity scores and shared concept names.
 	FindRelatedPatterns(ctx context.Context, patternID uuid.UUID, limit int) ([]RelatedPattern, error)
-
-	// FindPatternsByAgent finds patterns relevant to the specified agent, ordered by relevance.
-	FindPatternsByAgent(ctx context.Context, agentName string, limit int) ([]PatternRelevance, error)
 
 	// CleanupOrphanedConcepts removes concept nodes with no MENTIONED_IN relationships.
 	CleanupOrphanedConcepts(ctx context.Context) (int64, error)
@@ -163,60 +151,6 @@ func (r *neo4jRepository) defaultSessionFactory(ctx context.Context) SessionExec
 		DatabaseName: r.database,
 	})
 	return &neo4jSessionAdapter{session: session}
-}
-
-// SyncAgent creates or updates an Agent node in the graph.
-func (r *neo4jRepository) SyncAgent(ctx context.Context, agentName string) (err error) {
-	if strings.TrimSpace(agentName) == "" {
-		return errors.New("agentName must not be empty")
-	}
-
-	session := r.factory(ctx)
-	defer func() {
-		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing session: %w", closeErr)
-		}
-	}()
-
-	_, err = session.ExecuteWrite(ctx, func(runner CypherRunner) (any, error) {
-		_, err := runner.Run(ctx,
-			"MERGE (a:Agent {name: $name}) SET a.updatedAt = datetime()",
-			map[string]any{"name": agentName},
-		)
-		return nil, err
-	})
-
-	if err != nil {
-		return fmt.Errorf("syncing agent %q: %w", agentName, err)
-	}
-	return nil
-}
-
-// DeleteAgent removes an Agent node and all its relationships from the graph.
-func (r *neo4jRepository) DeleteAgent(ctx context.Context, agentName string) (err error) {
-	if strings.TrimSpace(agentName) == "" {
-		return errors.New("agentName must not be empty")
-	}
-
-	session := r.factory(ctx)
-	defer func() {
-		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing session: %w", closeErr)
-		}
-	}()
-
-	_, err = session.ExecuteWrite(ctx, func(runner CypherRunner) (any, error) {
-		_, err := runner.Run(ctx,
-			"MATCH (a:Agent {name: $name}) DETACH DELETE a",
-			map[string]any{"name": agentName},
-		)
-		return nil, err
-	})
-
-	if err != nil {
-		return fmt.Errorf("deleting agent %q: %w", agentName, err)
-	}
-	return nil
 }
 
 // SyncPattern creates or updates a Pattern node in the graph.
@@ -359,79 +293,6 @@ func (r *neo4jRepository) SyncConcepts(ctx context.Context, patternID uuid.UUID,
 
 	if err != nil {
 		return fmt.Errorf("syncing concepts for pattern %s: %w", patternID, err)
-	}
-	return nil
-}
-
-// SetPatternAgentRelevance replaces all RELEVANT_FOR relationships for a pattern.
-func (r *neo4jRepository) SetPatternAgentRelevance(ctx context.Context, patternID uuid.UUID, associations []AgentAssociation) (err error) {
-	if patternID == uuid.Nil {
-		return errors.New("patternID must not be nil UUID")
-	}
-
-	session := r.factory(ctx)
-	defer func() {
-		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing session: %w", closeErr)
-		}
-	}()
-
-	// Extract agent names for the diff-based delete query.
-	agentNames := make([]string, len(associations))
-	for i, a := range associations {
-		agentNames[i] = a.AgentName
-	}
-
-	_, err = session.ExecuteWrite(ctx, func(runner CypherRunner) (any, error) {
-		// Step 1: Remove RELEVANT_FOR relationships only for agents NOT in the new list.
-		// When agentNames is empty, WHERE NOT a.name IN [] matches everything,
-		// so all existing relationships are removed.
-		_, err := runner.Run(ctx,
-			`MATCH (p:Pattern {id: $patternId})-[r:RELEVANT_FOR]->(a:Agent)
-			 WHERE NOT a.name IN $agentNames
-			 DELETE r`,
-			map[string]any{
-				"patternId":  patternID.String(),
-				"agentNames": agentNames,
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("removing old RELEVANT_FOR relationships: %w", err)
-		}
-
-		if len(associations) == 0 {
-			return nil, nil
-		}
-
-		// Step 2: MERGE relationships and update relevance (preserves existing, updates in place).
-		assocMaps := make([]map[string]any, len(associations))
-		for i, a := range associations {
-			assocMaps[i] = map[string]any{
-				"agentName": a.AgentName,
-				"relevance": a.Relevance,
-			}
-		}
-
-		_, err = runner.Run(ctx,
-			`UNWIND $associations AS assoc
-			 MATCH (p:Pattern {id: $patternId})
-			 MATCH (a:Agent {name: assoc.agentName})
-			 MERGE (p)-[r:RELEVANT_FOR]->(a)
-			 SET r.relevance = assoc.relevance`,
-			map[string]any{
-				"patternId":    patternID.String(),
-				"associations": assocMaps,
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("creating RELEVANT_FOR relationships: %w", err)
-		}
-
-		return nil, nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("setting agent relevance for pattern %s: %w", patternID, err)
 	}
 	return nil
 }
@@ -675,90 +536,6 @@ func (r *neo4jRepository) FindRelatedPatterns(ctx context.Context, patternID uui
 	}
 
 	return result.([]RelatedPattern), nil
-}
-
-// FindPatternsByAgent finds patterns relevant to the specified agent, ordered by relevance.
-func (r *neo4jRepository) FindPatternsByAgent(ctx context.Context, agentName string, limit int) (_ []PatternRelevance, err error) {
-	if strings.TrimSpace(agentName) == "" {
-		return nil, errors.New("agentName must not be empty")
-	}
-
-	session := r.factory(ctx)
-	defer func() {
-		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing session: %w", closeErr)
-		}
-	}()
-
-	result, err := session.ExecuteRead(ctx, func(runner CypherRunner) (any, error) {
-		res, err := runner.Run(ctx,
-			`MATCH (p:Pattern)-[r:RELEVANT_FOR]->(a:Agent {name: $agentName})
-			 RETURN p.id AS id, p.name AS name, r.relevance AS relevance
-			 ORDER BY r.relevance DESC
-			 LIMIT $limit`,
-			map[string]any{
-				"agentName": agentName,
-				"limit":     limit,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		records, err := res.Collect(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		patterns := make([]PatternRelevance, 0, len(records))
-		for _, record := range records {
-			idVal, ok := record.Get("id")
-			if !ok {
-				return nil, fmt.Errorf("missing 'id' field in record")
-			}
-			idStr, ok := idVal.(string)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type for 'id': %T", idVal)
-			}
-
-			nameVal, ok := record.Get("name")
-			if !ok {
-				return nil, fmt.Errorf("missing 'name' field in record")
-			}
-			nameStr, ok := nameVal.(string)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type for 'name': %T", nameVal)
-			}
-
-			relevanceVal, ok := record.Get("relevance")
-			if !ok {
-				return nil, fmt.Errorf("missing 'relevance' field in record")
-			}
-			relevanceFloat, ok := relevanceVal.(float64)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type for 'relevance': %T", relevanceVal)
-			}
-
-			parsedID, err := uuid.Parse(idStr)
-			if err != nil {
-				return nil, fmt.Errorf("parsing pattern ID %q: %w", idStr, err)
-			}
-
-			patterns = append(patterns, PatternRelevance{
-				ID:        parsedID,
-				Name:      nameStr,
-				Relevance: relevanceFloat,
-			})
-		}
-
-		return patterns, nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("finding patterns for agent %q: %w", agentName, err)
-	}
-
-	return result.([]PatternRelevance), nil
 }
 
 // CleanupOrphanedConcepts removes concept nodes with no MENTIONED_IN relationships.
