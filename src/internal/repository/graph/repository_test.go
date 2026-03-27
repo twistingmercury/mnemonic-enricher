@@ -1162,7 +1162,7 @@ func TestRepository_ContextCancellation(t *testing.T) {
 
 	repo := newTestRepo(session)
 
-	err := repo.SyncAgent(ctx, "test-agent")
+	err := repo.SyncPattern(ctx, &graph.Pattern{ID: uuid.New(), Name: "test-pattern"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -1310,4 +1310,3 @@ func TestRepository_Validation_FindRelatedPatterns(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 }
-

@@ -84,27 +84,6 @@ func (m *mockPatternService) List(ctx context.Context, filter patternrepo.Filter
 	return args.Get(0).([]*patternrepo.Pattern), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *mockPatternService) SetAgentAssociations(ctx context.Context, patternID uuid.UUID, associations []patternsvc.AssociationInput) error {
-	args := m.Called(ctx, patternID, associations)
-	return args.Error(0)
-}
-
-func (m *mockPatternService) GetAgentAssociations(ctx context.Context, patternID uuid.UUID) ([]patternrepo.AgentAssociation, error) {
-	args := m.Called(ctx, patternID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]patternrepo.AgentAssociation), args.Error(1)
-}
-
-func (m *mockPatternService) ResolveAgentNames(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
-	args := m.Called(ctx, ids)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(map[uuid.UUID]string), args.Error(1)
-}
-
 func (m *mockPatternService) FindRelated(ctx context.Context, patternID uuid.UUID, limit int) ([]patternsvc.RelatedPatternResult, error) {
 	args := m.Called(ctx, patternID, limit)
 	if args.Get(0) == nil {
@@ -179,8 +158,6 @@ func TestPatternCreate_Success(t *testing.T) {
 
 	pattern := makePattern("go-error-handling")
 	psvc.On("Create", mock.Anything, mock.AnythingOfType("pattern.CreateInput")).Return(pattern, nil)
-	psvc.On("GetAgentAssociations", mock.Anything, pattern.ID).Return([]patternrepo.AgentAssociation{}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{}).Return(map[uuid.UUID]string{}, nil)
 
 	body := `{
 		"name": "go-error-handling",
@@ -424,10 +401,6 @@ func TestPatternGet_Success(t *testing.T) {
 
 	pattern := makePattern("go-error-handling")
 	psvc.On("GetWithGraph", mock.Anything, pattern.ID).Return(pattern, (*patternsvc.GraphContext)(nil), nil)
-	psvc.On("GetAgentAssociations", mock.Anything, pattern.ID).
-		Return([]patternrepo.AgentAssociation{}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{}).
-		Return(map[uuid.UUID]string{}, nil)
 	psvc.On("ListChunks", mock.Anything, pattern.ID).
 		Return([]*chunkrepo.Chunk{}, nil)
 
@@ -440,87 +413,6 @@ func TestPatternGet_Success(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "go-error-handling", resp["name"])
-}
-
-func TestPatternGet_WithAssociations_ResolvesAgentNames(t *testing.T) {
-	t.Parallel()
-	psvc := new(mockPatternService)
-	ssvc := new(mockSearchService)
-	router := newTestRouter(psvc, ssvc)
-
-	pattern := makePattern("go-error-handling")
-	agentID1 := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-	agentID2 := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-
-	psvc.On("GetWithGraph", mock.Anything, pattern.ID).Return(pattern, (*patternsvc.GraphContext)(nil), nil)
-	psvc.On("GetAgentAssociations", mock.Anything, pattern.ID).
-		Return([]patternrepo.AgentAssociation{
-			{AgentID: agentID1, Relevance: 0.95},
-			{AgentID: agentID2, Relevance: 0.80},
-		}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{agentID1, agentID2}).
-		Return(map[uuid.UUID]string{
-			agentID1: "go-software-engineer",
-			agentID2: "code-reviewer",
-		}, nil)
-	psvc.On("ListChunks", mock.Anything, pattern.ID).
-		Return([]*chunkrepo.Chunk{}, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/api/patterns/"+pattern.ID.String(), nil)
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
-	// Verify agent_associations contains human-readable names, not UUIDs.
-	assocs, ok := resp["agent_associations"].([]any)
-	require.True(t, ok, "expected agent_associations to be an array")
-	require.Len(t, assocs, 2)
-
-	first := assocs[0].(map[string]any)
-	assert.Equal(t, "go-software-engineer", first["agent_name"],
-		"agent_name should be a human-readable name, not a UUID")
-	assert.InDelta(t, 0.95, first["relevance"], 0.001)
-
-	second := assocs[1].(map[string]any)
-	assert.Equal(t, "code-reviewer", second["agent_name"],
-		"agent_name should be a human-readable name, not a UUID")
-	assert.InDelta(t, 0.80, second["relevance"], 0.001)
-
-	// Verify that no UUID strings leaked into agent_name fields.
-	assert.NotEqual(t, agentID1.String(), first["agent_name"],
-		"agent_name must not contain a UUID")
-	assert.NotEqual(t, agentID2.String(), second["agent_name"],
-		"agent_name must not contain a UUID")
-
-	psvc.AssertExpectations(t)
-}
-
-func TestPatternGet_ResolveAgentNames_Error(t *testing.T) {
-	t.Parallel()
-	psvc := new(mockPatternService)
-	ssvc := new(mockSearchService)
-	router := newTestRouter(psvc, ssvc)
-
-	pattern := makePattern("go-error-handling")
-	agentID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-
-	psvc.On("GetWithGraph", mock.Anything, pattern.ID).Return(pattern, (*patternsvc.GraphContext)(nil), nil)
-	psvc.On("GetAgentAssociations", mock.Anything, pattern.ID).
-		Return([]patternrepo.AgentAssociation{
-			{AgentID: agentID, Relevance: 0.95},
-		}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{agentID}).
-		Return(nil, fmt.Errorf("database connection lost"))
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/api/patterns/"+pattern.ID.String(), nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestPatternGet_InvalidUUID(t *testing.T) {
@@ -635,61 +527,6 @@ func TestPatternDelete_NotFound(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-func TestSetAgentAssociations_Success(t *testing.T) {
-	t.Parallel()
-	psvc := new(mockPatternService)
-	ssvc := new(mockSearchService)
-	router := newTestRouter(psvc, ssvc)
-
-	id := uuid.New()
-	psvc.On("SetAgentAssociations", mock.Anything, id, mock.Anything).Return(nil)
-
-	body := `{
-		"associations": [
-			{"agent_name": "go-software-engineer", "relevance": 0.95}
-		]
-	}`
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/v1/api/patterns/"+id.String()+"/agents", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusNoContent, w.Code)
-	assert.Empty(t, w.Body.Bytes())
-}
-
-func TestGetAgentAssociations_Success(t *testing.T) {
-	t.Parallel()
-	psvc := new(mockPatternService)
-	ssvc := new(mockSearchService)
-	router := newTestRouter(psvc, ssvc)
-
-	id := uuid.New()
-	agentID := uuid.New()
-	psvc.On("GetAgentAssociations", mock.Anything, id).
-		Return([]patternrepo.AgentAssociation{
-			{AgentID: agentID, Relevance: 0.95},
-		}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{agentID}).
-		Return(map[uuid.UUID]string{agentID: "go-software-engineer"}, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/api/patterns/"+id.String()+"/agents", nil)
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assocs := resp["associations"].([]any)
-	require.Len(t, assocs, 1)
-
-	first := assocs[0].(map[string]any)
-	assert.Equal(t, "go-software-engineer", first["agent_name"])
-	assert.InDelta(t, 0.95, first["relevance"], 0.001)
 }
 
 func TestSearch_Success(t *testing.T) {
@@ -827,8 +664,6 @@ func TestPatternGet_ChunksPopulated(t *testing.T) {
 		{ChunkIndex: 1, SectionTitle: "Philosophy", EnrichmentStatus: "enriched"},
 	}
 	psvc.On("GetWithGraph", mock.Anything, pattern.ID).Return(pattern, (*patternsvc.GraphContext)(nil), nil)
-	psvc.On("GetAgentAssociations", mock.Anything, pattern.ID).Return([]patternrepo.AgentAssociation{}, nil)
-	psvc.On("ResolveAgentNames", mock.Anything, []uuid.UUID{}).Return(map[uuid.UUID]string{}, nil)
 	psvc.On("ListChunks", mock.Anything, pattern.ID).Return(chunks, nil)
 
 	w := httptest.NewRecorder()

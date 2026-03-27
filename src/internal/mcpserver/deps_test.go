@@ -86,27 +86,6 @@ func (m *mockPatternService) List(ctx context.Context, filter patternrepo.Filter
 	return args.Get(0).([]*patternrepo.Pattern), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *mockPatternService) SetAgentAssociations(ctx context.Context, patternID uuid.UUID, associations []patternsvc.AssociationInput) error {
-	args := m.Called(ctx, patternID, associations)
-	return args.Error(0)
-}
-
-func (m *mockPatternService) GetAgentAssociations(ctx context.Context, patternID uuid.UUID) ([]patternrepo.AgentAssociation, error) {
-	args := m.Called(ctx, patternID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]patternrepo.AgentAssociation), args.Error(1)
-}
-
-func (m *mockPatternService) ResolveAgentNames(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
-	args := m.Called(ctx, ids)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(map[uuid.UUID]string), args.Error(1)
-}
-
 func (m *mockPatternService) FindRelated(ctx context.Context, patternID uuid.UUID, limit int) ([]patternsvc.RelatedPatternResult, error) {
 	args := m.Called(ctx, patternID, limit)
 	if args.Get(0) == nil {
