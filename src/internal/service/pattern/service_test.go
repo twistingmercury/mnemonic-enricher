@@ -215,6 +215,7 @@ func (m *mockGraphRepo) HealthCheck(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
 }
+
 // ---------- Mock: repository.TxBeginner ----------
 
 type mockTxBeginner struct {
@@ -478,7 +479,6 @@ func TestCreate(t *testing.T) {
 		er.AssertExpectations(t)
 		gr.AssertExpectations(t)
 	})
-
 
 	t.Run("pattern name conflict returns service.ErrConflict", func(t *testing.T) {
 		t.Parallel()
@@ -1000,9 +1000,6 @@ func TestList(t *testing.T) {
 		pr.AssertExpectations(t)
 	})
 }
-
-
-
 
 // ---------- FindRelated ----------
 

@@ -101,4 +101,3 @@ type Match struct {
 	// Similarity is the cosine similarity score (0.0-1.0, where 1.0 is identical).
 	Similarity float64
 }
-

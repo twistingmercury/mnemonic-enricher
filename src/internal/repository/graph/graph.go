@@ -41,4 +41,3 @@ type RelatedPattern struct {
 	// ConceptNames contains the names of the shared concepts between the two patterns.
 	ConceptNames []string
 }
-

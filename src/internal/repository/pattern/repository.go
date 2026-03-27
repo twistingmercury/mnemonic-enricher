@@ -455,4 +455,3 @@ func (r *pgxRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error) 
 
 	return exists, nil
 }
-

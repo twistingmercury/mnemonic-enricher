@@ -150,13 +150,11 @@ func (m *mockPatternRepo) FindSimilar(ctx context.Context, embedding []float32, 
 	return args.Get(0).([]*patternrepo.Match), args.Error(1)
 }
 
-
-
-
 func (m *mockPatternRepo) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
 	args := m.Called(ctx, id)
 	return args.Bool(0), args.Error(1)
 }
+
 // --- Mock: graphrepo.Repository ---
 
 type mockGraphRepo struct {
@@ -194,7 +192,6 @@ func (m *mockGraphRepo) FindRelatedPatterns(ctx context.Context, patternID uuid.
 	}
 	return args.Get(0).([]graphrepo.RelatedPattern), args.Error(1)
 }
-
 
 func (m *mockGraphRepo) CleanupOrphanedConcepts(ctx context.Context) (int64, error) {
 	args := m.Called(ctx)
@@ -402,7 +399,7 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 	deps := &testDeps{
 		jobRepo:       new(mockJobRepo),
 		patternRepo:   new(mockPatternRepo),
-			graphRepo:     new(mockGraphRepo),
+		graphRepo:     new(mockGraphRepo),
 		embeddingSvc:  new(mockEmbeddingSvc),
 		extractionSvc: new(mockExtractionSvc),
 		chunkRepo:     new(mockChunkRepo),
