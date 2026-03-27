@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
-	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
@@ -151,102 +150,17 @@ func (m *mockPatternRepo) FindSimilar(ctx context.Context, embedding []float32, 
 	return args.Get(0).([]*patternrepo.Match), args.Error(1)
 }
 
-func (m *mockPatternRepo) SetAgentAssociations(ctx context.Context, patternID uuid.UUID, associations []patternrepo.AgentAssociation) error {
-	return m.Called(ctx, patternID, associations).Error(0)
-}
 
-func (m *mockPatternRepo) GetAgentAssociations(ctx context.Context, patternID uuid.UUID) ([]patternrepo.AgentAssociation, error) {
-	args := m.Called(ctx, patternID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]patternrepo.AgentAssociation), args.Error(1)
-}
 
-func (m *mockPatternRepo) GetPatternIDsByAgent(ctx context.Context, agentID uuid.UUID) ([]uuid.UUID, error) {
-	args := m.Called(ctx, agentID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]uuid.UUID), args.Error(1)
-}
 
 func (m *mockPatternRepo) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
 	args := m.Called(ctx, id)
 	return args.Bool(0), args.Error(1)
 }
-
-// --- Mock: agentrepo.Repository ---
-
-type mockAgentRepo struct {
-	mock.Mock
-}
-
-func (m *mockAgentRepo) Create(ctx context.Context, agent *agentrepo.Agent) error {
-	return m.Called(ctx, agent).Error(0)
-}
-
-func (m *mockAgentRepo) Get(ctx context.Context, name string) (*agentrepo.Agent, error) {
-	args := m.Called(ctx, name)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*agentrepo.Agent), args.Error(1)
-}
-
-func (m *mockAgentRepo) GetByID(ctx context.Context, id uuid.UUID) (*agentrepo.Agent, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*agentrepo.Agent), args.Error(1)
-}
-
-func (m *mockAgentRepo) Update(ctx context.Context, agent *agentrepo.Agent) error {
-	return m.Called(ctx, agent).Error(0)
-}
-
-func (m *mockAgentRepo) Delete(ctx context.Context, name string) error {
-	return m.Called(ctx, name).Error(0)
-}
-
-func (m *mockAgentRepo) DeleteByID(ctx context.Context, id uuid.UUID) error {
-	return m.Called(ctx, id).Error(0)
-}
-
-func (m *mockAgentRepo) List(ctx context.Context, opts repository.ListOptions) ([]*agentrepo.Agent, int64, error) {
-	args := m.Called(ctx, opts)
-	if args.Get(0) == nil {
-		return nil, args.Get(1).(int64), args.Error(2)
-	}
-	return args.Get(0).([]*agentrepo.Agent), args.Get(1).(int64), args.Error(2)
-}
-
-func (m *mockAgentRepo) Exists(ctx context.Context, name string) (bool, error) {
-	args := m.Called(ctx, name)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *mockAgentRepo) GetManifest(ctx context.Context) ([]agentrepo.ManifestEntry, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]agentrepo.ManifestEntry), args.Error(1)
-}
-
 // --- Mock: graphrepo.Repository ---
 
 type mockGraphRepo struct {
 	mock.Mock
-}
-
-func (m *mockGraphRepo) SyncAgent(ctx context.Context, agentName string) error {
-	return m.Called(ctx, agentName).Error(0)
-}
-
-func (m *mockGraphRepo) DeleteAgent(ctx context.Context, agentName string) error {
-	return m.Called(ctx, agentName).Error(0)
 }
 
 func (m *mockGraphRepo) SyncPattern(ctx context.Context, pattern *graphrepo.Pattern) error {
@@ -259,10 +173,6 @@ func (m *mockGraphRepo) DeletePattern(ctx context.Context, patternID uuid.UUID) 
 
 func (m *mockGraphRepo) SyncConcepts(ctx context.Context, patternID uuid.UUID, concepts []graphrepo.Concept) error {
 	return m.Called(ctx, patternID, concepts).Error(0)
-}
-
-func (m *mockGraphRepo) SetPatternAgentRelevance(ctx context.Context, patternID uuid.UUID, associations []graphrepo.AgentAssociation) error {
-	return m.Called(ctx, patternID, associations).Error(0)
 }
 
 func (m *mockGraphRepo) ComputeRelatedToEdges(ctx context.Context, patternID uuid.UUID, minSimilarity float64) error {
@@ -285,13 +195,6 @@ func (m *mockGraphRepo) FindRelatedPatterns(ctx context.Context, patternID uuid.
 	return args.Get(0).([]graphrepo.RelatedPattern), args.Error(1)
 }
 
-func (m *mockGraphRepo) FindPatternsByAgent(ctx context.Context, agentName string, limit int) ([]graphrepo.PatternRelevance, error) {
-	args := m.Called(ctx, agentName, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]graphrepo.PatternRelevance), args.Error(1)
-}
 
 func (m *mockGraphRepo) CleanupOrphanedConcepts(ctx context.Context) (int64, error) {
 	args := m.Called(ctx)
@@ -407,7 +310,6 @@ func testConfig() config.EnrichmentConfig {
 var (
 	testPatternID = uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	testJobID     = uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	testAgentID   = uuid.MustParse("33333333-3333-3333-3333-333333333333")
 	testChunkID   = uuid.MustParse("44444444-4444-4444-4444-444444444444")
 )
 
@@ -489,7 +391,6 @@ func testGraphConcepts() []graphrepo.Concept {
 type testDeps struct {
 	jobRepo       *mockJobRepo
 	patternRepo   *mockPatternRepo
-	agentRepo     *mockAgentRepo
 	graphRepo     *mockGraphRepo
 	embeddingSvc  *mockEmbeddingSvc
 	extractionSvc *mockExtractionSvc
@@ -501,8 +402,7 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 	deps := &testDeps{
 		jobRepo:       new(mockJobRepo),
 		patternRepo:   new(mockPatternRepo),
-		agentRepo:     new(mockAgentRepo),
-		graphRepo:     new(mockGraphRepo),
+			graphRepo:     new(mockGraphRepo),
 		embeddingSvc:  new(mockEmbeddingSvc),
 		extractionSvc: new(mockExtractionSvc),
 		chunkRepo:     new(mockChunkRepo),
@@ -511,7 +411,6 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 	svc, err := enrichment.New(
 		deps.jobRepo,
 		deps.patternRepo,
-		deps.agentRepo,
 		deps.graphRepo,
 		deps.embeddingSvc,
 		deps.extractionSvc,
@@ -531,7 +430,6 @@ func TestNew_NilChunkRepo(t *testing.T) {
 	_, err := enrichment.New(
 		new(mockJobRepo),
 		new(mockPatternRepo),
-		new(mockAgentRepo),
 		new(mockGraphRepo),
 		new(mockEmbeddingSvc),
 		new(mockExtractionSvc),
@@ -556,20 +454,6 @@ func setupHappyPathMocks(deps *testDeps) {
 		return p.ID == testPatternID && p.Name == "test-pattern"
 	})).Return(nil)
 	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-
-	// Agent associations: one valid agent.
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{
-			{AgentID: testAgentID, Relevance: 0.9},
-		}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID,
-		[]graphrepo.AgentAssociation{{AgentName: "test-agent", Relevance: 0.9}},
-	).Return(nil)
-
 	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).Return(nil)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
 	deps.patternRepo.On("UpdateEnrichmentStatus", mock.Anything, testPatternID, "enriched", (*string)(nil)).Return(nil)
@@ -586,7 +470,6 @@ func assertExpectations(t *testing.T, deps *testDeps) {
 	t.Helper()
 	deps.jobRepo.AssertExpectations(t)
 	deps.patternRepo.AssertExpectations(t)
-	deps.agentRepo.AssertExpectations(t)
 	deps.graphRepo.AssertExpectations(t)
 	deps.embeddingSvc.AssertExpectations(t)
 	deps.extractionSvc.AssertExpectations(t)
@@ -737,7 +620,7 @@ func TestProcessJob_Step6_SyncConceptsFails(t *testing.T) {
 	assertExpectations(t, deps)
 }
 
-func TestProcessJob_Step7_GetAgentAssociationsFails(t *testing.T) {
+func TestProcessJob_Step7_ComputeRelatedToEdgesFails(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
@@ -747,59 +630,6 @@ func TestProcessJob_Step7_GetAgentAssociationsFails(t *testing.T) {
 	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
 	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
 	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).
-		Return(nil, errors.New("db error"))
-	setupFailJobMocks(deps)
-
-	err := svc.ProcessJob(context.Background(), testJob())
-
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
-	assertExpectations(t, deps)
-}
-
-func TestProcessJob_Step7_SetPatternAgentRelevanceFails(t *testing.T) {
-	t.Parallel()
-
-	svc, deps := newTestService(t)
-	pattern := testPattern()
-	concepts := testConcepts()
-	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(pattern, nil)
-	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
-	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
-	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{{AgentID: testAgentID, Relevance: 0.9}}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID, mock.Anything).
-		Return(errors.New("neo4j unavailable"))
-	setupFailJobMocks(deps)
-
-	err := svc.ProcessJob(context.Background(), testJob())
-
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
-	assertExpectations(t, deps)
-}
-
-func TestProcessJob_Step8_ComputeRelatedToEdgesFails(t *testing.T) {
-	t.Parallel()
-
-	svc, deps := newTestService(t)
-	pattern := testPattern()
-	concepts := testConcepts()
-	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(pattern, nil)
-	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
-	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
-	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{{AgentID: testAgentID, Relevance: 0.9}}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID, mock.Anything).Return(nil)
 	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).
 		Return(errors.New("neo4j unavailable"))
 	setupFailJobMocks(deps)
@@ -824,13 +654,6 @@ func TestProcessJob_MarkCompletedFails(t *testing.T) {
 	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
 	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
 	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{{AgentID: testAgentID, Relevance: 0.9}}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID, mock.Anything).Return(nil)
 	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).Return(nil)
 	deps.patternRepo.On("UpdateEnrichmentStatus", mock.Anything, testPatternID, "enriched", (*string)(nil)).Return(nil)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(errors.New("db error"))
@@ -855,13 +678,6 @@ func TestProcessJob_UpdateEnrichmentStatusAfterCompletionFails(t *testing.T) {
 	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
 	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
 	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{{AgentID: testAgentID, Relevance: 0.9}}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID, mock.Anything).Return(nil)
 	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).Return(nil)
 	deps.patternRepo.On("UpdateEnrichmentStatus", mock.Anything, testPatternID, "enriched", (*string)(nil)).
 		Return(errors.New("db error"))
@@ -912,48 +728,6 @@ func TestFailJob_UpdateEnrichmentStatusFails(t *testing.T) {
 	assertExpectations(t, deps)
 }
 
-// ---------- ProcessJob: agent not found is skipped ----------
-
-func TestProcessJob_AgentNotFoundSkippedDuringAssociationSync(t *testing.T) {
-	t.Parallel()
-
-	svc, deps := newTestService(t)
-	pattern := testPattern()
-	concepts := testConcepts()
-	missingAgentID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
-
-	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(pattern, nil)
-	deps.extractionSvc.On("Extract", mock.Anything, pattern.Content).Return(concepts, nil)
-	deps.graphRepo.On("SyncPattern", mock.Anything, mock.Anything).Return(nil)
-	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-
-	// Two associations: one resolvable, one not found (should be skipped).
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{
-			{AgentID: testAgentID, Relevance: 0.9},
-			{AgentID: missingAgentID, Relevance: 0.5},
-		}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, testAgentID).Return(
-		&agentrepo.Agent{ID: testAgentID, Name: "test-agent"}, nil,
-	)
-	deps.agentRepo.On("GetByID", mock.Anything, missingAgentID).Return(nil, agentrepo.ErrNotFound)
-
-	// Only the resolvable agent should be synced.
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID,
-		[]graphrepo.AgentAssociation{{AgentName: "test-agent", Relevance: 0.9}},
-	).Return(nil)
-
-	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).Return(nil)
-	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
-	deps.patternRepo.On("UpdateEnrichmentStatus", mock.Anything, testPatternID, "enriched", (*string)(nil)).Return(nil)
-
-	err := svc.ProcessJob(context.Background(), testJob())
-
-	require.NoError(t, err)
-	assertExpectations(t, deps)
-}
-
 // ---------- ProcessJob: chunk-based pipeline ----------
 
 // setupChunkGraphMocks wires the graph pipeline mocks for a chunk job that
@@ -970,12 +744,6 @@ func setupChunkGraphMocks(deps *testDeps) {
 		return p.ID == testPatternID
 	})).Return(nil)
 	deps.graphRepo.On("SyncConcepts", mock.Anything, testPatternID, testGraphConcepts()).Return(nil)
-	deps.patternRepo.On("GetAgentAssociations", mock.Anything, testPatternID).Return(
-		[]patternrepo.AgentAssociation{}, nil,
-	)
-	deps.graphRepo.On("SetPatternAgentRelevance", mock.Anything, testPatternID,
-		[]graphrepo.AgentAssociation{},
-	).Return(nil)
 	deps.graphRepo.On("ComputeRelatedToEdges", mock.Anything, testPatternID, 0.3).Return(nil)
 }
 

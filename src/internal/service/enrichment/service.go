@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
-	agentrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/agent"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	graphrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
@@ -50,9 +49,8 @@ type Service interface {
 	//   4. Extract concepts via ExtractionService
 	//   5. Sync pattern node to Neo4j
 	//   6. Sync concepts and MENTIONED_IN edges to Neo4j
-	//   7. Sync agent associations to Neo4j
-	//   8. Compute RELATED_TO edges
-	//   9. Mark job completed and pattern enriched
+	//   7. Compute RELATED_TO edges
+	//   8. Mark job completed and pattern enriched
 	//
 	// On failure at any pipeline step, marks the job as failed with error detail.
 	// Returns nil when a step fails but the failure is recorded successfully.
@@ -75,7 +73,6 @@ type Service interface {
 type enrichmentService struct {
 	jobRepo       enrichmentjob.Repository
 	patternRepo   patternrepo.Repository
-	agentRepo     agentrepo.Repository
 	graphRepo     graphrepo.Repository
 	chunkRepo     chunkrepo.Repository
 	embeddingSvc  openaisvc.EmbeddingService
@@ -89,7 +86,6 @@ type enrichmentService struct {
 func New(
 	jobRepo enrichmentjob.Repository,
 	patternRepo patternrepo.Repository,
-	agentRepo agentrepo.Repository,
 	graphRepo graphrepo.Repository,
 	embeddingSvc openaisvc.EmbeddingService,
 	extractionSvc openaisvc.ExtractionService,
@@ -102,9 +98,6 @@ func New(
 	}
 	if patternRepo == nil {
 		return nil, fmt.Errorf("enrichment.New: patternRepo is required")
-	}
-	if agentRepo == nil {
-		return nil, fmt.Errorf("enrichment.New: agentRepo is required")
 	}
 	if graphRepo == nil {
 		return nil, fmt.Errorf("enrichment.New: graphRepo is required")
@@ -121,7 +114,6 @@ func New(
 	return &enrichmentService{
 		jobRepo:       jobRepo,
 		patternRepo:   patternRepo,
-		agentRepo:     agentRepo,
 		graphRepo:     graphRepo,
 		chunkRepo:     chunkRepo,
 		embeddingSvc:  embeddingSvc,
@@ -304,17 +296,6 @@ func (s *enrichmentService) runGraphPipeline(ctx context.Context, job *enrichmen
 		return recordFail(fmt.Errorf("sync concepts to neo4j: %w", err))
 	}
 
-	// Sync agent associations to Neo4j.
-	// patternrepo.AgentAssociation has AgentID (UUID), but Neo4j Agent nodes are
-	// keyed by name. Resolve agent names via agentRepo before syncing.
-	graphAssocs, err := s.resolveAgentAssociations(ctx, pattern.ID)
-	if err != nil {
-		return recordFail(fmt.Errorf("get agent associations: %w", err))
-	}
-	if err := s.graphRepo.SetPatternAgentRelevance(ctx, pattern.ID, graphAssocs); err != nil {
-		return recordFail(fmt.Errorf("sync associations to neo4j: %w", err))
-	}
-
 	// Compute RELATED_TO edges based on shared concepts.
 	if err := s.graphRepo.ComputeRelatedToEdges(ctx, pattern.ID, s.cfg.RelatedToMinSimilarity); err != nil {
 		return recordFail(fmt.Errorf("compute related_to: %w", err))
@@ -385,34 +366,6 @@ func (s *enrichmentService) failChunkJob(ctx context.Context, job *enrichmentjob
 	return s.jobRepo.MarkFailed(ctx, job.ID, cause, s.cfg.RetryDelay)
 }
 
-// resolveAgentAssociations loads pattern-agent associations from Postgres and
-// resolves agent UUIDs to names for Neo4j sync. Agents that cannot be resolved
-// are logged and skipped.
-func (s *enrichmentService) resolveAgentAssociations(ctx context.Context, patternID uuid.UUID) ([]graphrepo.AgentAssociation, error) {
-	associations, err := s.patternRepo.GetAgentAssociations(ctx, patternID)
-	if err != nil {
-		return nil, err
-	}
-
-	graphAssocs := make([]graphrepo.AgentAssociation, 0, len(associations))
-	for _, a := range associations {
-		agent, err := s.agentRepo.GetByID(ctx, a.AgentID)
-		if err != nil {
-			s.logger.Warn().
-				Err(err).
-				Str("agent_id", a.AgentID.String()).
-				Msg("skip association: agent not found")
-			continue
-		}
-		graphAssocs = append(graphAssocs, graphrepo.AgentAssociation{
-			AgentName: agent.Name,
-			Relevance: a.Relevance,
-		})
-	}
-
-	return graphAssocs, nil
-}
-
 // failJob marks the job as failed and updates the pattern enrichment status.
 // Returns nil on success (the failure is recorded). Returns an error only when
 // the failure itself cannot be recorded (unrecoverable).
@@ -473,7 +426,6 @@ var _ Service = (*enrichmentService)(nil)
 var _ func(
 	enrichmentjob.Repository,
 	patternrepo.Repository,
-	agentrepo.Repository,
 	graphrepo.Repository,
 	openaisvc.EmbeddingService,
 	openaisvc.ExtractionService,
