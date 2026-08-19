@@ -71,7 +71,6 @@ services:
 
   dev_api:
     image: ghcr.io/twistingmercury/mnemonic:latest-dev
-    pull_policy: never
     restart: unless-stopped
     ports:
       - "8080:8080"

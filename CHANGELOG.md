@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-19
+
+### Changed
+
+- Modernized the root README for clearer project usage, architecture, and development guidance
+- Reworked `src/build/README.md` to accurately document build, E2E, CI, and Docker Compose workflows, service boundaries, safe diagnostics, image constraints, and RabbitMQ endpoints, credentials, and troubleshooting
+
+### Fixed
+
+- Corrected the example logging keys to `MNEMONIC_LOGGING_LEVEL` and `MNEMONIC_LOGGING_FORMAT`
+- Restored normal registry pull behavior for the companion API image while retaining `pull_policy: never` for the locally built enricher image
 
 ## [0.2.0] - 2026-03-21
 

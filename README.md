@@ -1,193 +1,128 @@
 # mnemonic-enricher
 
-[![Build Status](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/ci.yml/badge.svg)](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/ci.yml)
+> **Maturity Level**: Emerging - Prototype, not production-ready, expect breaking changes
+> **Version**: v0.3.0
+>
+> - **Emerging**: Prototype, not production-ready, expect breaking changes
+> - **Basic**: Production-ready but actively evolving, expect minor version changes
+> - **Mature**: Stable, battle-tested, changes are rare
 
-> **Maturity Level**: Beta - Stable enrichment worker, RabbitMQ integration operational
+[![Build Status](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/mnemonic-enrichment-ci.yaml/badge.svg)](https://github.com/twistingmercury/mnemonic-enricher/actions/workflows/mnemonic-enrichment-ci.yaml)
 
-A standalone enrichment worker that processes embedding and knowledge graph synchronization jobs delivered via message queue.
+---
+
+## Table of Contents
+
+- [Usage](#usage)
+- [How it works](#how-it-works)
+- [Key Considerations](#key-considerations)
+- [Development Considerations](#development-considerations)
+- [Versioning](#versioning)
 
 ## Usage
 
-`mnemonic-enricher` subscribes to a message queue, processes enrichment jobs (embeddings via OpenAI + graph synchronization to Neo4j), and exposes only health and version endpoints:
+`mnemonic-enricher` is a queue-driven Go worker. It consumes enrichment job IDs
+from RabbitMQ, generates embeddings and concepts with OpenAI, persists enrichment
+state in PostgreSQL, and synchronizes the knowledge graph to Neo4j.
 
-```bash
-# Health check
-curl http://localhost:8080/health
+Publish a job that already exists in PostgreSQL to the configured RabbitMQ queue
+(`enrichment-jobs` by default):
 
-# Version information
-curl http://localhost:8080/version
+```json
+{
+  "job_id": "00000000-0000-0000-0000-000000000000"
+}
 ```
 
-Start the service with Docker Compose:
+The service exposes operational endpoints on ports `8080` and `9090` by default:
 
 ```bash
-docker compose up
+curl http://localhost:8080/health
+curl http://localhost:8080/version
+curl http://localhost:9090/metrics
 ```
 
 ## How it works
 
-### Queue-driven architecture
+1. The RabbitMQ subscriber receives an enrichment job ID.
+2. The worker loads the job from PostgreSQL and marks it as processing.
+3. Chunk jobs are embedded with context from their parent pattern; the worker waits
+   for every chunk before finalizing the pattern. Legacy pattern-only jobs skip
+   embedding.
+4. OpenAI generates chunk embeddings and extracts concepts for the pattern.
+5. The worker persists embeddings and job status to PostgreSQL, then synchronizes
+   patterns, concepts, `MENTIONED_IN`, and similarity-based `RELATED_TO` data to
+   Neo4j.
+6. The worker marks the job completed or failed and acknowledges the queue delivery.
 
-The worker subscribes to a configurable message queue (default: RabbitMQ) for enrichment job delivery. The queue abstraction (`queue.Subscriber` interface in `internal/queue/queue.go`) permits swapping queue providers without changing worker logic.
-
-**Current provider:** RabbitMQ (`internal/queue/rabbitmq/`)
-
-**Adding a new provider:** Create a new package under `internal/queue/<provider>/` implementing the `Subscriber` interface, then add a case in the server's provider switch.
-
-### Enrichment pipeline
-
-For each job:
-
-1. **Embedding**: Call OpenAI API to generate vector embeddings
-2. **Graph sync**: Store embeddings and synchronize relationships to Neo4j
-
-Patterns are enriched with vector embeddings to enable semantic search in downstream consumers.
-
-## Configuration
-
-Configure the worker via environment variables. All values have sensible defaults.
-
-### Queue Provider
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_QUEUE_PROVIDER` | `rabbitmq` | Queue provider (e.g., `rabbitmq`) |
-
-### RabbitMQ
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_QUEUE_RABBITMQ_HOST` | `localhost` | RabbitMQ host |
-| `MNEMONIC_QUEUE_RABBITMQ_PORT` | `5672` | RabbitMQ port |
-| `MNEMONIC_QUEUE_RABBITMQ_USER` | `guest` | RabbitMQ username |
-| `MNEMONIC_QUEUE_RABBITMQ_PASSWORD` | `guest` | RabbitMQ password |
-| `MNEMONIC_QUEUE_RABBITMQ_VHOST` | `/` | RabbitMQ virtual host |
-| `MNEMONIC_QUEUE_RABBITMQ_QUEUE` | `enrichment-jobs` | Queue name |
-| `MNEMONIC_QUEUE_RABBITMQ_PREFETCH_COUNT` | `5` | Prefetch count per worker |
-| `MNEMONIC_QUEUE_RABBITMQ_RECONNECT_DELAY` | `5s` | Reconnection delay |
-
-### Database: PostgreSQL
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_DATABASE_POSTGRES_HOST` | `localhost` | PostgreSQL host |
-| `MNEMONIC_DATABASE_POSTGRES_PORT` | `5432` | PostgreSQL port |
-| `MNEMONIC_DATABASE_POSTGRES_DATABASE` | `mnemonic` | Database name |
-| `MNEMONIC_DATABASE_POSTGRES_USERNAME` | `postgres` | Username |
-| `MNEMONIC_DATABASE_POSTGRES_PASSWORD` | `postgres` | Password |
-
-### Database: Neo4j
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_DATABASE_NEO4J_URI` | `neo4j://localhost:7687` | Neo4j connection URI |
-| `MNEMONIC_DATABASE_NEO4J_USERNAME` | `neo4j` | Username |
-| `MNEMONIC_DATABASE_NEO4J_PASSWORD` | `neo4j` | Password |
-| `MNEMONIC_DATABASE_NEO4J_DATABASE` | `neo4j` | Database name |
-
-### OpenAI
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_OPENAI_API_KEY` | (required) | OpenAI API key |
-| `MNEMONIC_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-large` | Embedding model |
-| `MNEMONIC_OPENAI_EMBEDDING_DIMENSIONS` | `2000` | Vector dimensions for embedding generation (must match database column) |
-| `MNEMONIC_OPENAI_EXTRACTION_MODEL` | `gpt-4o-mini` | Extraction model for concept analysis |
-
-### Enrichment Worker
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MNEMONIC_ENRICHMENT_WORKER_COUNT` | `2` | Number of concurrent enrichment workers |
-| `MNEMONIC_ENRICHMENT_JOB_TIMEOUT` | `5m` | Job processing timeout |
-| `MNEMONIC_ENRICHMENT_MAX_ATTEMPTS` | `3` | Retry attempts per job |
+RabbitMQ is currently the only queue provider, behind the `queue.Subscriber`
+interface.
 
 ## Key Considerations
 
-- **No HTTP API handlers**: This is a worker service. Only `/health` and `/version` are exposed for operational use.
-- **Queue abstraction**: Swap queue providers by implementing the `Subscriber` interface and configuring the provider name.
-- **Database dependency**: PostgreSQL stores patterns and their metadata; Neo4j stores the enriched knowledge graph.
-- **OpenAI API cost**: Each pattern embedding incurs an OpenAI API cost. Consider batch processing and rate limiting for large datasets.
+- This worker is not the Mnemonic API. Its HTTP surface is limited to health,
+  version, and metrics endpoints.
+- PostgreSQL, Neo4j, RabbitMQ, and OpenAI are required runtime dependencies.
+- The PostgreSQL schema and the producers that create enrichment jobs are maintained
+  outside this repository and must be available before the worker starts.
+- `MNEMONIC_OPENAI_EMBEDDING_DIMENSIONS` must match the PostgreSQL vector column.
+- OpenAI embedding and concept-extraction requests can incur usage and cost.
+- Configuration precedence is compiled defaults, YAML, then `MNEMONIC_` environment
+  variables. See
+  [`src/internal/config/defaults.go`](src/internal/config/defaults.go) for defaults.
 
 ## Development Considerations
 
 ### Quick Start
 
-Clone and build:
+Requirements are Go 1.26.6 or newer, Docker with the Compose plugin for container
+builds and end-to-end tests, accessible PostgreSQL, Neo4j, and RabbitMQ instances
+with the Mnemonic schema, and an OpenAI API key for live enrichment.
+
+Build and run a local binary:
 
 ```bash
 git clone https://github.com/twistingmercury/mnemonic-enricher.git
 cd mnemonic-enricher
-make build
-```
-
-Requires:
-- Go 1.21+
-- Docker 27+
-- Docker Compose 2.32+
-
-([Go installation](https://go.dev/doc/install),
-[Docker installation](https://docs.docker.com/get-docker/))
-
-### Building & running
-
-Build locally and run unit + integration + E2E tests:
-
-```bash
-make build
-```
-
-The `make build` target invokes the full CI build script (`src/build/build.sh`), which:
-- Runs unit tests
-- Runs integration tests (PostgreSQL and Neo4j via Docker)
-- Builds the Docker image
-- Runs E2E tests
-
-For development, use `make local` to build a binary without Docker:
-
-```bash
+mkdir -p .bin
 make local
+export MNEMONIC_DATABASE_POSTGRES_PASSWORD=mnemonic_dev
+export MNEMONIC_DATABASE_NEO4J_PASSWORD=mnemonic_dev
+export MNEMONIC_QUEUE_RABBITMQ_PASSWORD=guest
+export MNEMONIC_OPENAI_API_KEY=your-api-key
+./.bin/mnemonic-enricher
 ```
 
-This runs only the Go build step (no tests, no Docker image).
+The root Compose file depends on migration assets and a prebuilt Mnemonic API image
+that are not included in this repository; it is not a standalone bootstrap path.
+See the [build and development guide](src/build/README.md) for image builds,
+Compose services, endpoints, and troubleshooting.
 
 ### Testing
 
 Run unit tests:
 
 ```bash
-make tests-unit
+cd src
+go test ./...
 ```
 
-Run graph repository integration tests (PostgreSQL + Neo4j required):
-
-```bash
-make tests-db-graph
-```
-
-Run benchmarks:
+From the repository root, run benchmarks or the Docker-first build and end-to-end
+pipeline used by CI:
 
 ```bash
 make tests-bench
+make build
 ```
 
-### Linting and code quality
-
-```bash
-make analyze
-```
-
-This runs:
-- `goimports` code formatting
-- `golangci-lint` linting
-- `govulncheck` vulnerability scanning
-- `gosec` security scanning
+Run formatting, linting, vulnerability analysis, and security scanning with
+`make analyze`.
 
 ### Versioning
 
 This project follows [Semantic Versioning 2.0.0](https://semver.org/).
 
-Version is determined from git tags:
+Version is determined from Git tags:
 
 ```bash
 git describe --tags --always

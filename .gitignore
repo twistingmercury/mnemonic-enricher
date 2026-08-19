@@ -70,10 +70,14 @@ site/
 **/*.err
 # Local documentation scripts
 docs/scripts/
+/docs/
 
 # Go artifacts
 
 **/coverage.out
+**/*.test
+/src/main
+/src/tests/e2e/openai-stub/openai-stub
 src/mnemonic/docs/swagger/
 
 **/rlm_state/
