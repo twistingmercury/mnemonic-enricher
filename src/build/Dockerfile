@@ -2,7 +2,7 @@
 # Stage 1: Run linters, formatters, security scanners, 
 # unit tests, then build binary
 #------------------------------------------------------------
-FROM ghcr.io/twistingmercury/golang-tooling:alpine AS build
+FROM ghcr.io/twistingmercury/golang-tooling:latest AS build
 
 ENV CGO_ENABLED=0 \
     GOARCH=amd64 \
@@ -45,7 +45,7 @@ ARG BUILD_COMMIT=unknown
 LABEL org.opencontainers.image.title="mnemonic-enricher" \
     org.opencontainers.image.description="Backend server providing enrichment services for patterns within Mnemonic MCP server." \
     org.opencontainers.image.source="https://github.com/twistingmercury/mnemonic-enricher" \
-    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.licenses="Apache-2.0" \
     org.opencontainers.image.authors="Jeremy K. Johnson" \
     org.opencontainers.image.created="${BUILD_DATE}" \
     org.opencontainers.image.revision="${BUILD_COMMIT}" \

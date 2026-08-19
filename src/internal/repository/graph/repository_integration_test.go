@@ -410,7 +410,6 @@ func TestIntegration_SyncConcepts(t *testing.T) {
 	})
 }
 
-
 func TestIntegration_FindRelatedPatterns(t *testing.T) {
 	driver, repo := setupNeo4jDriver(t)
 	cleanupNeo4jTestData(t, driver)
@@ -662,7 +661,6 @@ func TestIntegration_GetPatternConcepts(t *testing.T) {
 	})
 }
 
-
 func TestIntegration_CleanupOrphanedConcepts(t *testing.T) {
 	driver, repo := setupNeo4jDriver(t)
 	cleanupNeo4jTestData(t, driver)
@@ -723,7 +721,6 @@ func TestIntegration_CleanupOrphanedConcepts(t *testing.T) {
 func TestIntegration_ContextCancellation(t *testing.T) {
 	repo := setupNeo4j(t)
 
-
 	t.Run("SyncPattern with cancelled context", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -740,7 +737,6 @@ func TestIntegration_ContextCancellation(t *testing.T) {
 		_, err := repo.FindRelatedPatterns(ctx, uuid.New(), 10)
 		assert.Error(t, err)
 	})
-
 
 	t.Run("CleanupOrphanedConcepts with cancelled context", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -782,9 +778,6 @@ func TestIntegration_InputValidation(t *testing.T) {
 	repo := setupNeo4j(t)
 
 	ctx := context.Background()
-
-
-
 
 	t.Run("SyncPattern rejects nil pattern", func(t *testing.T) {
 		err := repo.SyncPattern(ctx, nil)
@@ -841,7 +834,6 @@ func TestIntegration_InputValidation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "patternID must not be nil UUID")
 	})
-
 
 }
 
@@ -919,7 +911,6 @@ func TestIntegration_EdgeCases(t *testing.T) {
 		assert.Empty(t, results, "pattern with no concepts should have no related patterns")
 	})
 
-
 	t.Run("SyncConcepts for pattern that does not exist in graph", func(t *testing.T) {
 		// SyncConcepts uses MATCH (p:Pattern {id: $patternId}) which will simply
 		// not find the pattern, resulting in no MERGE operations. The step 1
@@ -963,7 +954,6 @@ func TestIntegration_EdgeCases(t *testing.T) {
 		count = countConceptRelationships(t, driver, p.ID)
 		assert.Equal(t, int64(0), count, "concept relationships should be removed with pattern")
 	})
-
 
 	t.Run("concepts shared across patterns are not duplicated", func(t *testing.T) {
 		pX := testPattern("shared-concept-x")

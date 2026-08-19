@@ -4,13 +4,14 @@ GIT_COMMIT := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown"
 GIT_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 BUILD_DATE := $(shell date -u +%Y-%m-%d)
 LD_FLAGS="-s -w \
-	-X 'github.com/twistingmercury/mnemonic-enricher/cmd/version.version=${GIT_TAG}' \
-	-X 'github.com/twistingmercury/mnemonic-enricher/cmd/version.buildDate=${BUILD_DATE}' \
-	-X 'github.com/twistingmercury/mnemonic-enricher/cmd/version.commit=${GIT_COMMIT}'"
+	-X 'github.com/twistingmercury/mnemonic-enricher/internal/version.version=${GIT_TAG}' \
+	-X 'github.com/twistingmercury/mnemonic-enricher/internal/version.buildDate=${BUILD_DATE}' \
+	-X 'github.com/twistingmercury/mnemonic-enricher/internal/version.commit=${GIT_COMMIT}'"
 
 default: help
 
 local: ## Build binary locally (no tests, no Docker)
+	mkdir -p .bin
 	cd src && go build --ldflags ${LD_FLAGS} -o ../.bin/mnemonic-enricher ./cmd/main
 
 build: ## Build Docker image locally using the full CI build script
