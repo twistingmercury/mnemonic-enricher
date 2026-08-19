@@ -1,7 +1,7 @@
 # mnemonic-enricher
 
 > **Maturity Level**: Emerging - Prototype, not production-ready, expect breaking changes
-> **Version**: v0.3.0
+> **Version**: v0.3.1
 >
 > - **Emerging**: Prototype, not production-ready, expect breaking changes
 > - **Basic**: Production-ready but actively evolving, expect minor version changes
@@ -13,11 +13,15 @@
 
 ## Table of Contents
 
-- [Usage](#usage)
-- [How it works](#how-it-works)
-- [Key Considerations](#key-considerations)
-- [Development Considerations](#development-considerations)
-- [Versioning](#versioning)
+- [mnemonic-enricher](#mnemonic-enricher)
+  - [Table of Contents](#table-of-contents)
+  - [Usage](#usage)
+  - [How it works](#how-it-works)
+  - [Key Considerations](#key-considerations)
+  - [Development Considerations](#development-considerations)
+    - [Quick Start](#quick-start)
+    - [Testing](#testing)
+    - [Versioning](#versioning)
 
 ## Usage
 

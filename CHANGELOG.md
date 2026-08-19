@@ -5,17 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-08-19
+## [Unreleased]
+
+## [0.3.1] - 2026-08-19
 
 ### Changed
 
-- Modernized the root README for clearer project usage, architecture, and development guidance
-- Reworked `src/build/README.md` to accurately document build, E2E, CI, and Docker Compose workflows, service boundaries, safe diagnostics, image constraints, and RabbitMQ endpoints, credentials, and troubleshooting
+- Raised the service module to Go 1.26.6 and upgraded direct and indirect runtime dependencies
+- Aligned the E2E suite, OpenAI stub module, and stub builder image with the service's Go baseline
+- Updated the build stage to use the `golang-tooling:latest` image
+- Modernized the root and build documentation for project usage, architecture, development, CI, Docker Compose, and RabbitMQ operations
+- Updated `make local` to create `.bin` and inject build metadata through the `internal/version` package
+- Restored normal registry pull behavior for `dev_api` while retaining `pull_policy: never` for the locally built `dev_enricher` image
 
 ### Fixed
 
 - Corrected the example logging keys to `MNEMONIC_LOGGING_LEVEL` and `MNEMONIC_LOGGING_FORMAT`
-- Restored normal registry pull behavior for the companion API image while retaining `pull_policy: never` for the locally built enricher image
+
+### Removed
+
+- Removed tracked compiled binaries and added ignore rules to prevent local Go artifacts from being committed
+
+## [0.3.0] - 2026-04-06
+
+### Changed
+
+- Relicensed the repository from proprietary terms to the Apache License 2.0
 
 ## [0.2.0] - 2026-03-21
 
@@ -65,5 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent routing logic and policy engine
 - Pattern search REST endpoints
 
-[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/twistingmercury/mnemonic-enricher/releases/tag/v0.1.0
