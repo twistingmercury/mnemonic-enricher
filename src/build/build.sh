@@ -44,11 +44,18 @@ e2e_tests(){
         docker compose -f "${E2E_COMPOSE_FILE}" down -v --remove-orphans > /dev/null 2>&1 || true
 
         if [ ${LOCAL} = 1 ]; then
+            # docker image ls --filter 'reference=tests*' --quiet | sort -u | xargs -r docker image rm --force > /dev/null 2>&1 || true
             docker rmi tests_mnemonic_tests:latest -f > /dev/null 2>&1 || true
             docker system prune -f > /dev/null 2>&1 || true
         fi
     }
     trap cleanup EXIT
+
+    printf "Pulling infrastructure images...\n"
+    if ! docker compose -f "${E2E_COMPOSE_FILE}" pull --policy always e2e_postgres e2e_neo4j e2e_rabbitmq; then
+        printf "ERROR: Failed to pull infrastructure images\n" >&2
+        return 1
+    fi
 
     printf "Starting infrastructure services...\n"
     if ! docker compose -f "${E2E_COMPOSE_FILE}" up -d e2e_postgres e2e_neo4j e2e_rabbitmq e2e_openai_stub; then
