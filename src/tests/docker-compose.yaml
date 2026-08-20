@@ -2,6 +2,7 @@
 services:
   e2e_postgres:
     image: ghcr.io/twistingmercury/mnemonic-postgres:v1.0.0-dev
+    pull_policy: always
     environment:
       POSTGRES_DB: mnemonic
       POSTGRES_USER: mnemonic
@@ -16,6 +17,7 @@ services:
 
   e2e_neo4j:
     image: ghcr.io/twistingmercury/mnemonic-neo4j:v1.0.0-dev
+    pull_policy: always
     environment:
       NEO4J_AUTH: neo4j/mnemonic_dev
       NEO4J_PLUGINS: '["apoc"]'
@@ -31,6 +33,7 @@ services:
 
   e2e_rabbitmq:
     image: rabbitmq:4.0-management
+    pull_policy: always
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
@@ -47,6 +50,7 @@ services:
       - enrichment_network
 
   e2e_enricher:
+    pull_policy: never
     image: ghcr.io/twistingmercury/mnemonic-enrichment:latest
     environment:
       MNEMONIC_DATABASE_POSTGRES_HOST: e2e_postgres
