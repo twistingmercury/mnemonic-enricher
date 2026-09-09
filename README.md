@@ -1,7 +1,7 @@
 # mnemonic-enricher
 
 > **Maturity Level**: Emerging - Prototype, not production-ready, expect breaking changes
-> **Version**: v0.3.1
+> **Version**: v0.3.2
 >
 > - **Emerging**: Prototype, not production-ready, expect breaking changes
 > - **Basic**: Production-ready but actively evolving, expect minor version changes
@@ -20,6 +20,7 @@
   - [Key Considerations](#key-considerations)
   - [Development Considerations](#development-considerations)
     - [Quick Start](#quick-start)
+    - [Building & running](#building--running)
     - [Testing](#testing)
     - [Versioning](#versioning)
 
@@ -79,9 +80,11 @@ interface.
 
 ### Quick Start
 
-Requirements are Go 1.26.6 or newer, Docker with the Compose plugin for container
+Requirements are Go 1.27.1 or newer, Docker with the Compose plugin for container
 builds and end-to-end tests, accessible PostgreSQL, Neo4j, and RabbitMQ instances
 with the Mnemonic schema, and an OpenAI API key for live enrichment.
+
+### Building & running
 
 Build and run a local binary:
 
@@ -97,12 +100,15 @@ export MNEMONIC_OPENAI_API_KEY=your-api-key
 ./.bin/mnemonic-enricher
 ```
 
-The root Compose file depends on migration assets and a prebuilt Mnemonic API image
-that are not included in this repository; it is not a standalone bootstrap path.
+The [E2E Compose file](src/tests/docker-compose.yaml) provides test infrastructure
+using published Mnemonic PostgreSQL and Neo4j images, RabbitMQ, and an OpenAI stub.
 See the [build and development guide](src/build/README.md) for image builds,
 Compose services, endpoints, and troubleshooting.
 
 ### Testing
+
+The service retains `pgx/v5` v5.10.0 for compatibility with `pgxmock/v4` v4.9.0.
+Upgrading to pgx v5.11.0 requires a mock implementation of `pgx.Rows.TypeMap`.
 
 Run unit tests:
 

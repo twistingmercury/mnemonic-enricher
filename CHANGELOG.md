@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-09
+
+### Changed
+
+- Raised the service and E2E suite modules to Go 1.27.1
+- Pinned the service build and E2E runner images to `golang-tooling:go1.27.1`
+- Upgraded direct and indirect service dependencies, including OpenTelemetry, heartbeat, otelx, and testify
+- Updated CI to `actions/checkout@v5` and `docker/login-action@v4`
+
+### Fixed
+
+- Retained `pgx/v5` v5.10.0 for compatibility with `pgxmock/v4` v4.9.0, avoiding the missing `pgx.Rows.TypeMap` method errors introduced by pgx v5.11.0
+- Pulled E2E infrastructure images before startup and reused them during Compose startup to address Neo4j CI failures
+- Prevented E2E Compose from pulling the locally built enricher image
+
+### Removed
+
+- Removed the root Docker Compose file; E2E infrastructure remains in `src/tests/docker-compose.yaml`
+
 ## [0.3.1] - 2026-08-19
 
 ### Changed
@@ -80,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent routing logic and policy engine
 - Pattern search REST endpoints
 
-[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.1.0...v0.2.0

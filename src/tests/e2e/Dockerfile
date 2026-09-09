@@ -1,4 +1,4 @@
-FROM ghcr.io/twistingmercury/golang-tooling:alpine
+FROM ghcr.io/twistingmercury/golang-tooling:go1.27.1
 
 ENV GOTOOLCHAIN=auto
 
