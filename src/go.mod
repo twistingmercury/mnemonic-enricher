@@ -1,6 +1,6 @@
 module github.com/twistingmercury/mnemonic-enricher
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/gin-gonic/gin v1.12.0
