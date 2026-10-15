@@ -1,13 +1,9 @@
 package chunk
 
-import (
-	"time"
+import "github.com/google/uuid"
 
-	"github.com/google/uuid"
-)
-
-// Chunk is one H2-bounded section of a parent pattern.
-// It maps to a row in the pattern_chunks table.
+// Chunk is one H2-bounded section of a parent pattern, with the parent
+// pattern fields its embedding text needs.
 type Chunk struct {
 	// ID is the unique identifier for the chunk.
 	ID uuid.UUID
@@ -15,88 +11,25 @@ type Chunk struct {
 	// PatternID references the parent pattern (patterns.id).
 	PatternID uuid.UUID
 
-	// SectionTitle is the H2 heading text (e.g., "Philosophy", "created_at Handling").
+	// SectionTitle is the H2 heading text (e.g., "Philosophy").
 	SectionTitle string
-
-	// ChunkIndex is the zero-based position of this chunk within the parent pattern.
-	ChunkIndex int
 
 	// Content is the raw markdown text of the section (heading not included).
 	Content string
 
-	// EnrichmentStatus is one of "pending", "enriched", or "failed".
-	EnrichmentStatus string
-
-	// EnrichmentError holds the error message when EnrichmentStatus is "failed".
-	EnrichmentError *string
-
-	// EnrichedAt is set when EnrichmentStatus transitions to "enriched".
-	EnrichedAt *time.Time
-
-	// CreatedAt is the row creation timestamp.
-	CreatedAt time.Time
-
-	// UpdatedAt is the last modification timestamp.
-	UpdatedAt time.Time
-}
-
-// Match is a similarity search result: chunk content plus parent pattern metadata.
-type Match struct {
-	// ChunkID is the ID of the matching chunk.
-	ChunkID uuid.UUID
-
-	// PatternID is the ID of the parent pattern.
-	PatternID uuid.UUID
-
-	// PatternName is the name of the parent pattern (patterns.name).
+	// PatternName is the parent pattern's name.
 	PatternName string
 
-	// EntityType is the pattern's entity type (e.g., "go-pattern").
-	EntityType string
-
-	// Language is the primary language of the pattern (e.g., "go", "agnostic").
-	Language string
-
-	// Domain is the technical domain (e.g., "backend", "testing").
-	Domain string
-
-	// Tags are the parent pattern's tags.
-	Tags []string
-
-	// SectionTitle is the H2 heading of the matching chunk.
-	SectionTitle string
-
-	// ChunkIndex is the zero-based position of the chunk within its parent pattern.
-	ChunkIndex int
-
-	// Content is the text content of the matching chunk.
-	Content string
-
-	// Similarity is the cosine similarity score in [0, 1] — higher is more similar.
-	Similarity float64
+	// PatternTags are the parent pattern's tags.
+	PatternTags []string
 }
 
-// SimilarityOptions controls the behaviour of FindSimilar.
-type SimilarityOptions struct {
-	// MinSimilarity is the minimum cosine similarity score to include in results.
-	MinSimilarity float64
+// Progress summarizes the enrichment state of all chunks of one pattern.
+type Progress struct {
+	// AnyFailed is true when at least one chunk has status "failed".
+	AnyFailed bool
 
-	// MaxResults caps the number of results returned. Defaults to 10 when <= 0.
-	MaxResults int
-
-	// Language filters results to chunks whose parent pattern has this language.
-	// Empty string disables this filter.
-	Language string
-
-	// Domain filters results to chunks whose parent pattern has this domain.
-	// Empty string disables this filter.
-	Domain string
-
-	// PatternIDs restricts results to chunks belonging to these patterns.
-	// Empty slice disables this filter.
-	PatternIDs []uuid.UUID
-
-	// Tags restricts results to patterns whose tags contain all of these values.
-	// Empty slice disables this filter.
-	Tags []string
+	// AllEnriched is true when the pattern has chunks and every one has
+	// status "enriched".
+	AllEnriched bool
 }

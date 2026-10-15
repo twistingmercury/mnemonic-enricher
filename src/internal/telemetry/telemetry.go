@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // Telemetry wraps the otelx.Telemetry with application-specific helpers.
@@ -125,15 +124,6 @@ func (t *Telemetry) MetricsRegistry() *metrics.Registry {
 	return t.metricsRegistry
 }
 
-// Tracer returns an OpenTelemetry tracer for creating spans.
-func (t *Telemetry) Tracer(name string) trace.Tracer {
-	if t.otel.TracerProvider != nil {
-		return t.otel.TracerProvider.Tracer(name)
-	}
-	// Return global noop tracer if tracing not enabled
-	return otel.Tracer(name)
-}
-
 // Meter returns an OpenTelemetry meter for creating metrics.
 func (t *Telemetry) Meter(name string) metric.Meter {
 	if t.otel.MeterProvider != nil {
@@ -141,22 +131,6 @@ func (t *Telemetry) Meter(name string) metric.Meter {
 	}
 	// Return global noop meter if metrics not enabled
 	return otel.Meter(name)
-}
-
-// TracerProvider returns the underlying trace provider.
-func (t *Telemetry) TracerProvider() trace.TracerProvider {
-	if t.otel.TracerProvider != nil {
-		return t.otel.TracerProvider
-	}
-	return otel.GetTracerProvider()
-}
-
-// MeterProvider returns the underlying meter provider.
-func (t *Telemetry) MeterProvider() metric.MeterProvider {
-	if t.otel.MeterProvider != nil {
-		return t.otel.MeterProvider
-	}
-	return otel.GetMeterProvider()
 }
 
 // Otelx returns the underlying otelx.Telemetry instance.

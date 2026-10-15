@@ -1,6 +1,3 @@
-// Package repository provides common types and interfaces shared across
-// mnemonic-enricher's data access layer. It defines the DBTX interface for
-// database operations, transaction support via TxBeginner, pagination with
-// ListOptions, and PostgreSQL error code constants for constraint violation
-// handling.
+// Package repository holds what mnemonic-enricher's Postgres repositories
+// share: the DBTX interface and enrichment status validation.
 package repository

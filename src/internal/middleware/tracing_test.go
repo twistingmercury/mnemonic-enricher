@@ -17,7 +17,7 @@ func init() {
 
 func TestTracingMiddleware(t *testing.T) {
 	router := gin.New()
-	router.Use(middleware.TracingMiddleware("test-service"))
+	router.Use(middleware.TracingMiddlewareWithSkipPaths("test-service", middleware.DefaultSkipPaths))
 
 	router.GET("/test", func(c *gin.Context) {
 		// Verify span is accessible in context (may not be valid without configured provider)
@@ -37,7 +37,7 @@ func TestTracingMiddleware(t *testing.T) {
 
 func TestTracingMiddlewareSkipsHealthPath(t *testing.T) {
 	router := gin.New()
-	router.Use(middleware.TracingMiddleware("test-service"))
+	router.Use(middleware.TracingMiddlewareWithSkipPaths("test-service", middleware.DefaultSkipPaths))
 
 	healthCalled := false
 	router.GET("/health", func(c *gin.Context) {
@@ -55,7 +55,7 @@ func TestTracingMiddlewareSkipsHealthPath(t *testing.T) {
 
 func TestTracingMiddlewareSkipsMetricsPath(t *testing.T) {
 	router := gin.New()
-	router.Use(middleware.TracingMiddleware("test-service"))
+	router.Use(middleware.TracingMiddlewareWithSkipPaths("test-service", middleware.DefaultSkipPaths))
 
 	metricsCalled := false
 	router.GET("/metrics", func(c *gin.Context) {
@@ -93,7 +93,7 @@ func TestTracingMiddlewareWithSkipPaths(t *testing.T) {
 
 func TestTracingMiddlewareDoesNotSkipRegularPaths(t *testing.T) {
 	router := gin.New()
-	router.Use(middleware.TracingMiddleware("test-service"))
+	router.Use(middleware.TracingMiddlewareWithSkipPaths("test-service", middleware.DefaultSkipPaths))
 
 	apiCalled := false
 	router.GET("/api/v1/test", func(c *gin.Context) {

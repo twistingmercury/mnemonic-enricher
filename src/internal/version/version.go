@@ -23,22 +23,6 @@ func Commit() string {
 	return commit
 }
 
-// Info returns all version information as a struct for structured responses.
-type Info struct {
-	Version   string `json:"version"`
-	BuildDate string `json:"build_date"`
-	Commit    string `json:"commit"`
-}
-
-// GetInfo returns all version information in a structured format.
-func GetInfo() Info {
-	return Info{
-		Version:   version,
-		BuildDate: buildDate,
-		Commit:    commit,
-	}
-}
-
 // Print returns a formatted ASCII art banner with version information
 // suitable for CLI display.
 func Print() string {

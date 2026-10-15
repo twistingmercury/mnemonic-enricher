@@ -7,48 +7,18 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ValidEnrichmentStatuses defines the valid values for the EnrichmentStatus field.
-var ValidEnrichmentStatuses = []string{"pending", "enriched", "failed"}
-
-// IsValidEnrichmentStatus reports whether status is a valid enrichment status value.
+// IsValidEnrichmentStatus reports whether status is one of "pending",
+// "enriched" or "failed".
 func IsValidEnrichmentStatus(status string) bool {
-	for _, s := range ValidEnrichmentStatuses {
-		if s == status {
-			return true
-		}
+	switch status {
+	case "pending", "enriched", "failed":
+		return true
 	}
 	return false
 }
 
-// ListOptions defines pagination parameters for list operations.
-type ListOptions struct {
-	// Limit specifies the maximum number of items to return.
-	// A value of 0 means no limit.
-	Limit int
-
-	// Offset specifies the number of items to skip before returning results.
-	Offset int
-}
-
-// DefaultListOptions returns ListOptions with sensible defaults.
-func DefaultListOptions() ListOptions {
-	return ListOptions{
-		Limit:  100,
-		Offset: 0,
-	}
-}
-
-// DBTX is an interface that both *pgxpool.Pool and pgxmock can satisfy.
-// It defines the database operations required by the repository.
+// DBTX is the subset of *pgxpool.Pool (and pgxmock) the repositories use.
 type DBTX interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-// TxBeginner allows starting database transactions.
-// Use this interface when service layer needs to coordinate multiple repository operations.
-// Note: pgx.Tx satisfies DBTX, so repositories can accept either a pool or a transaction.
-type TxBeginner interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
 }
