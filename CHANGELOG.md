@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Failed jobs are retried. A failed job was set back to `pending` with a retry time, but its message was already acked, so nothing ever ran it again. The same was true of stale jobs that `ReclaimStale` reset. The worker now claims jobs due for a retry every 15 seconds (`FOR UPDATE SKIP LOCKED`, up to the number of free workers), along with new jobs left pending for over 2 minutes because the API saved them but failed to publish. Retries get a `retry enrichment job` span and the usual job metrics.
+- A queue delivery only starts a job that is pending and due. A redelivered message, a job the retry sweep already took, or one waiting out its retry delay is now acked and skipped instead of being processed again.
+
 ### Added
 
 - Distributed tracing for enrichment jobs. Each delivery gets a consumer span that continues the API's trace from the W3C `traceparent` message header, with child spans for PostgreSQL queries (otelpgx), Neo4j operations and OpenAI embedding and extraction calls (otelhttp). Retried OpenAI calls add an `openai.embed.retry` or `openai.extract.retry` span event.

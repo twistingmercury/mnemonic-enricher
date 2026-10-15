@@ -13,9 +13,16 @@ import (
 
 // Repository defines the job operations the enrichment worker needs.
 type Repository interface {
-	// Start marks a job as processing and returns it, in one statement.
-	// Returns ErrNotFound if no job with the given ID exists.
+	// Start marks a pending, due job as processing and returns it, in one
+	// statement. Returns ErrUnavailable if no such job exists, which includes
+	// a job another worker already started or one not yet due for retry.
 	Start(ctx context.Context, id uuid.UUID) (*Job, error)
+
+	// ClaimDue marks up to limit pending jobs as processing and returns them,
+	// skipping rows other workers hold. A job is due when it is waiting for a
+	// retry (attempts > 0) and its scheduled_for has passed, or when it has
+	// been due for longer than grace without any delivery starting it.
+	ClaimDue(ctx context.Context, grace time.Duration, limit int) ([]*Job, error)
 
 	// MarkCompleted updates job status to completed with completion time.
 	MarkCompleted(ctx context.Context, id uuid.UUID) error
@@ -46,28 +53,71 @@ func NewRepository(db repository.DBTX) Repository {
 	return &pgxRepository{db: db}
 }
 
-// Start marks a job as processing and returns its target IDs. It replaces a
-// SELECT followed by an UPDATE with one round trip.
+// Start marks a pending, due job as processing and returns its target IDs.
+// The status and schedule conditions make it safe against a redelivered
+// message, a job the retry sweep already claimed, and a job waiting out its
+// retry delay.
 func (r *pgxRepository) Start(ctx context.Context, id uuid.UUID) (*Job, error) {
 	query := `
 		UPDATE enrichment_jobs SET
 			status = $2,
 			started_at = now(),
 			updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND status = $3 AND scheduled_for <= now()
 		RETURNING id, pattern_id, chunk_id
 	`
 
 	var job Job
-	err := r.db.QueryRow(ctx, query, id, string(StatusProcessing)).Scan(&job.ID, &job.PatternID, &job.ChunkID)
+	err := r.db.QueryRow(ctx, query, id, string(StatusProcessing), string(StatusPending)).
+		Scan(&job.ID, &job.PatternID, &job.ChunkID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, ErrUnavailable
 		}
 		return nil, fmt.Errorf("start job: %w", err)
 	}
 
 	return &job, nil
+}
+
+// ClaimDue claims due pending jobs with FOR UPDATE SKIP LOCKED, so concurrent
+// sweeps and Start calls never take the same job.
+func (r *pgxRepository) ClaimDue(ctx context.Context, grace time.Duration, limit int) ([]*Job, error) {
+	query := `
+		UPDATE enrichment_jobs SET
+			status = $1,
+			started_at = now(),
+			updated_at = now()
+		WHERE id IN (
+			SELECT id FROM enrichment_jobs
+			WHERE status = $2
+			  AND (
+			    (attempts > 0 AND scheduled_for <= now())
+			    OR scheduled_for <= now() - $3::interval
+			  )
+			ORDER BY scheduled_for
+			LIMIT $4
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, pattern_id, chunk_id
+	`
+
+	graceInterval := fmt.Sprintf("%d seconds", int(grace.Seconds()))
+	rows, err := r.db.Query(ctx, query, string(StatusProcessing), string(StatusPending), graceInterval, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim due jobs: %w", err)
+	}
+
+	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Job, error) {
+		var job Job
+		err := row.Scan(&job.ID, &job.PatternID, &job.ChunkID)
+		return &job, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claim due jobs: %w", err)
+	}
+
+	return jobs, nil
 }
 
 // MarkCompleted updates job status to completed with completion time.
