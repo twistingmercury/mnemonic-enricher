@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-15
+
 ### Fixed
 
 - Failed jobs are retried. A failed job was set back to `pending` with a retry time, but its message was already acked, so nothing ever ran it again. The same was true of stale jobs that `ReclaimStale` reset. The worker now claims jobs due for a retry every 15 seconds (`FOR UPDATE SKIP LOCKED`, up to the number of free workers), along with new jobs left pending for over 2 minutes because the API saved them but failed to publish. Retries get a `retry enrichment job` span and the usual job metrics.
@@ -130,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent routing logic and policy engine
 - Pattern search REST endpoints
 
-[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.2.0...v0.3.0
