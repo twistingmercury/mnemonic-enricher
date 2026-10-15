@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
@@ -45,7 +49,10 @@ type openaiEmbedding struct {
 
 func newOpenAIEmbedding(cfg config.OpenAIConfig, baseURL string) *openaiEmbedding {
 	return &openaiEmbedding{
-		client:     &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		baseURL:    baseURL,
 		apiKey:     cfg.APIKey,
 		model:      cfg.EmbeddingModel,
@@ -101,6 +108,10 @@ func (e *openaiEmbedding) Embed(ctx context.Context, text string) ([]float32, er
 
 		// Sleep before retry, unless this was the last attempt.
 		if attempt < e.retries {
+			trace.SpanFromContext(ctx).AddEvent("openai.embed.retry", trace.WithAttributes(
+				attribute.Int("attempt", attempt+1),
+				attribute.String("error", err.Error()),
+			))
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("%w: %w", ErrEmbeddingFailed, ctx.Err())

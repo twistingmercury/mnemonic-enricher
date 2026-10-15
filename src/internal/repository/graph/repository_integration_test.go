@@ -67,7 +67,7 @@ func setupNeo4j(t *testing.T) graph.Repository {
 		_ = driver.Close(context.Background())
 	})
 
-	return graph.NewRepository(driver, database)
+	return graph.NewRepository(driver, database, nil)
 }
 
 // setupNeo4jDriver creates a Neo4j driver and returns both the driver and a
@@ -112,7 +112,7 @@ func setupNeo4jDriver(t *testing.T) (neo4j.DriverWithContext, graph.Repository) 
 		_ = driver.Close(context.Background())
 	})
 
-	repo := graph.NewRepository(driver, database)
+	repo := graph.NewRepository(driver, database, nil)
 	return driver, repo
 }
 
@@ -992,7 +992,7 @@ func TestIntegration_HealthCheck_Failure(t *testing.T) {
 		_ = driver.Close(context.Background())
 	})
 
-	repo := graph.NewRepository(driver, "neo4j")
+	repo := graph.NewRepository(driver, "neo4j", nil)
 	err = repo.HealthCheck(ctx)
 
 	// VerifyConnectivity should fail against the unreachable address.

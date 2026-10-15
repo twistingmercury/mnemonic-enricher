@@ -17,6 +17,6 @@ func TestNewRegistry(t *testing.T) {
 	registry, err := metrics.NewRegistry(meter)
 	require.NoError(t, err)
 	assert.NotNil(t, registry)
-	assert.NotNil(t, registry.Patterns)
+	assert.NotNil(t, registry.Jobs)
 	assert.NotNil(t, registry.Database)
 }

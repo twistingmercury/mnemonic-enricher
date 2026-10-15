@@ -11,6 +11,11 @@ type Delivery struct {
 	// Body is the raw message payload.
 	Body []byte
 
+	// Headers holds the string-valued message headers, including the W3C
+	// trace context the producer injected. It satisfies
+	// propagation.MapCarrier, so the consumer can continue the trace.
+	Headers map[string]string
+
 	// Ack signals the broker that the message was processed successfully.
 	Ack func() error
 

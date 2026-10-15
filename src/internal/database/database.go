@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	neo4jcfg "github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
@@ -15,6 +16,9 @@ import (
 )
 
 // NewPostgresPool creates a pgxpool.Pool configured from the provided PostgresConfig.
+// Queries are traced and timed with otelpgx, and pool statistics are exported
+// as metrics, both through the global OpenTelemetry providers, so telemetry
+// must be initialized first.
 // The caller is responsible for calling pool.Close() when done.
 func NewPostgresPool(ctx context.Context, cfg config.PostgresConfig) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN())
@@ -25,6 +29,7 @@ func NewPostgresPool(ctx context.Context, cfg config.PostgresConfig) (*pgxpool.P
 	poolCfg.MaxConns = safeIntToInt32(cfg.MaxOpenConns)
 	poolCfg.MinConns = safeIntToInt32(cfg.MaxIdleConns)
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -34,6 +39,11 @@ func NewPostgresPool(ctx context.Context, cfg config.PostgresConfig) (*pgxpool.P
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("pinging postgres: %w", err)
+	}
+
+	if err := otelpgx.RecordStats(pool); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("recording postgres pool stats: %w", err)
 	}
 
 	return pool, nil

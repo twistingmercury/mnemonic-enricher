@@ -219,6 +219,6 @@ func TestMetricsRegistryCreatedAndAccessible(t *testing.T) {
 	assert.NotNil(t, registry, "MetricsRegistry should not be nil")
 
 	// Verify the registry has its sub-registries initialized
-	assert.NotNil(t, registry.Patterns, "Patterns metrics should be initialized")
+	assert.NotNil(t, registry.Jobs, "Patterns metrics should be initialized")
 	assert.NotNil(t, registry.Database, "Database metrics should be initialized")
 }

@@ -5,11 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 )
+
+var tracer = otel.Tracer("mnemonic/neo4j")
 
 // CypherRunner abstracts the ability to run Cypher queries.
 // This interface is satisfied by neo4j.ManagedTransaction and can be
@@ -73,14 +82,17 @@ type neo4jRepository struct {
 	database      string
 	factory       SessionFactory
 	healthCheckFn func(ctx context.Context) error
+	dbMetrics     *metrics.Database
 }
 
-// NewRepository creates a new Neo4j-backed Repository.
-func NewRepository(driver neo4j.DriverWithContext, database string) Repository {
+// NewRepository creates a new Neo4j-backed Repository. Each operation gets a
+// client span and, when dbMetrics is non-nil, a latency and error recording.
+func NewRepository(driver neo4j.DriverWithContext, database string, dbMetrics *metrics.Database) Repository {
 	r := &neo4jRepository{
 		driver:        driver,
 		database:      database,
 		healthCheckFn: driver.VerifyConnectivity,
+		dbMetrics:     dbMetrics,
 	}
 	r.factory = r.defaultSessionFactory
 	return r
@@ -95,6 +107,31 @@ func newRepositoryWithFactory(factory SessionFactory, healthCheckFn func(ctx con
 	return &neo4jRepository{
 		factory:       factory,
 		healthCheckFn: healthCheckFn,
+	}
+}
+
+// instrument starts a client span for one Neo4j operation. The returned func
+// ends the span and records the operation's latency and outcome; defer it
+// before the session close so close errors are counted too.
+func (r *neo4jRepository) instrument(ctx context.Context, op string) (context.Context, func(error)) {
+	start := time.Now()
+	ctx, span := tracer.Start(ctx, "neo4j "+op,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system.name", "neo4j"),
+			attribute.String("db.namespace", r.database),
+			attribute.String("db.operation.name", op),
+		),
+	)
+	return ctx, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+		if r.dbMetrics != nil {
+			r.dbMetrics.RecordQueryWithError(ctx, "neo4j", op, time.Since(start), err)
+		}
 	}
 }
 
@@ -162,6 +199,9 @@ func (r *neo4jRepository) SyncPattern(ctx context.Context, pattern *Pattern) (er
 		return errors.New("pattern name must not be empty")
 	}
 
+	ctx, done := r.instrument(ctx, "SyncPattern")
+	defer func() { done(err) }()
+
 	session := r.factory(ctx)
 	defer func() {
 		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
@@ -201,6 +241,9 @@ func (r *neo4jRepository) DeletePattern(ctx context.Context, patternID uuid.UUID
 		return errors.New("patternID must not be nil UUID")
 	}
 
+	ctx, done := r.instrument(ctx, "DeletePattern")
+	defer func() { done(err) }()
+
 	session := r.factory(ctx)
 	defer func() {
 		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
@@ -227,6 +270,9 @@ func (r *neo4jRepository) SyncConcepts(ctx context.Context, patternID uuid.UUID,
 	if patternID == uuid.Nil {
 		return errors.New("patternID must not be nil UUID")
 	}
+
+	ctx, done := r.instrument(ctx, "SyncConcepts")
+	defer func() { done(err) }()
 
 	session := r.factory(ctx)
 	defer func() {
@@ -304,6 +350,9 @@ func (r *neo4jRepository) ComputeRelatedToEdges(ctx context.Context, patternID u
 		return errors.New("patternID must not be nil UUID")
 	}
 
+	ctx, done := r.instrument(ctx, "ComputeRelatedToEdges")
+	defer func() { done(err) }()
+
 	session := r.factory(ctx)
 	defer func() {
 		if closeErr := session.Close(ctx); closeErr != nil && err == nil {
@@ -362,6 +411,9 @@ func (r *neo4jRepository) GetPatternConcepts(ctx context.Context, patternID uuid
 	if patternID == uuid.Nil {
 		return nil, errors.New("patternID must not be nil UUID")
 	}
+
+	ctx, done := r.instrument(ctx, "GetPatternConcepts")
+	defer func() { done(err) }()
 
 	session := r.factory(ctx)
 	defer func() {
@@ -428,6 +480,9 @@ func (r *neo4jRepository) FindRelatedPatterns(ctx context.Context, patternID uui
 	if patternID == uuid.Nil {
 		return nil, errors.New("patternID must not be nil UUID")
 	}
+
+	ctx, done := r.instrument(ctx, "FindRelatedPatterns")
+	defer func() { done(err) }()
 
 	session := r.factory(ctx)
 	defer func() {
@@ -540,6 +595,9 @@ func (r *neo4jRepository) FindRelatedPatterns(ctx context.Context, patternID uui
 
 // CleanupOrphanedConcepts removes concept nodes with no MENTIONED_IN relationships.
 func (r *neo4jRepository) CleanupOrphanedConcepts(ctx context.Context) (_ int64, err error) {
+	ctx, done := r.instrument(ctx, "CleanupOrphanedConcepts")
+	defer func() { done(err) }()
+
 	session := r.factory(ctx)
 	defer func() {
 		if closeErr := session.Close(ctx); closeErr != nil && err == nil {

@@ -254,7 +254,7 @@ func TestWorkerProcessesAvailableJobs(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -283,7 +283,7 @@ func TestWorkerNacksOnGetJobFailure(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -312,7 +312,7 @@ func TestWorkerNacksOnMarkJobProcessingFailure(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -342,7 +342,7 @@ func TestWorkerNacksOnProcessJobFailure(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -374,7 +374,7 @@ func TestWorkerNacksOnInvalidDeliveryBody(t *testing.T) {
 		},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -395,7 +395,7 @@ func TestWorkerGracefulShutdown(t *testing.T) {
 	// No deliveries; worker will block until ctx is cancelled.
 	sub := &mockSubscriber{name: "test-queue"}
 
-	w := enricher.New(svc, sub, testConfig(2), testLogger())
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -449,7 +449,7 @@ func TestMultipleWorkersConcurrency(t *testing.T) {
 		deliveries: deliveries,
 	}
 
-	w := enricher.New(svc, sub, testConfig(2), testLogger())
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -472,7 +472,7 @@ func TestMaintenanceLoopRuns(t *testing.T) {
 	// a 5-minute ticker, which is too slow for unit tests. We verify the wiring
 	// works by testing the exported Run method completes cleanly.
 	sub := &mockSubscriber{name: "test-queue"}
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -486,7 +486,7 @@ func TestNewReturnsNonNil(t *testing.T) {
 
 	svc := new(mockService)
 	sub := &mockSubscriber{name: "test-queue"}
-	w := enricher.New(svc, sub, testConfig(2), testLogger())
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
 	assert.NotNil(t, w)
 }
 
@@ -534,7 +534,7 @@ func TestGracefulDrainWaitsForInflightJobs(t *testing.T) {
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 2 * time.Second // Generous drain timeout.
 
-	w := enricher.New(svc, sub, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -598,7 +598,7 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 50 * time.Millisecond // Short drain timeout.
 
-	w := enricher.New(svc, sub, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -675,7 +675,7 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	cfg := testConfig(workerCount)
 	cfg.DrainTimeout = 2 * time.Second
 
-	w := enricher.New(svc, sub, cfg, testLogger())
+	w := enricher.New(svc, sub, cfg, testLogger(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -721,7 +721,7 @@ func TestRunWorkerPatternOnlyJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -754,7 +754,7 @@ func TestRunWorkerChunkOnlyJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -787,7 +787,7 @@ func TestRunWorkerBothIDsJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger())
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

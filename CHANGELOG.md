@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Distributed tracing for enrichment jobs. Each delivery gets a consumer span that continues the API's trace from the W3C `traceparent` message header, with child spans for PostgreSQL queries (otelpgx), Neo4j operations and OpenAI embedding and extraction calls (otelhttp). Retried OpenAI calls add an `openai.embed.retry` or `openai.extract.retry` span event.
+- `mnemonic.enrichment.jobs` (by `outcome`: completed, failed, error, rejected) and `mnemonic.enrichment.job_duration` for every handled delivery.
+- PostgreSQL client metrics from otelpgx: `db.client.operation.duration` per operation and `pgxpool.*` pool statistics.
+- `mnemonic.db.query_latency` and `mnemonic.db.query_errors` are now recorded for every Neo4j operation. Previously these instruments were created but never recorded.
+- Worker log lines for a job carry its `trace_id` and `span_id`.
+
 ### Changed
 
+- `ProcessJob` returns an error wrapping `enrichment.ErrJobFailed` when a step fails and the failure is recorded, instead of nil. The worker still acks these messages, and now marks the job's span as failed.
+- `queue.Delivery` carries the message's string headers.
 - Raised the service and E2E suite modules to Go 1.27.2 and pinned the build and E2E runner images to `golang-tooling:go1.27.2`
 - Upgraded `golang.org/x/net` to v0.60.0 to clear five govulncheck findings in v0.59.0
+- Custom latency histograms record fractional milliseconds. Previously durations were truncated to whole milliseconds, so sub-millisecond calls recorded 0.
+
+### Removed
+
+- The unused `mnemonic.patterns.*` instruments and the unused connection pool gauges, replaced by the otelpgx pool statistics.
 
 ## [0.3.2] - 2026-09-09
 

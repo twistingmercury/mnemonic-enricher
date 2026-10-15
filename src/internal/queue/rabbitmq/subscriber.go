@@ -172,9 +172,17 @@ func (s *RabbitMQSubscriber) drain(ctx context.Context, deliveries <-chan amqp.D
 }
 
 // adapt converts an amqp091.Delivery to a provider-agnostic queue.Delivery.
+// Only string headers are kept; trace context is always a string.
 func adapt(d amqp.Delivery) queue.Delivery {
+	headers := make(map[string]string, len(d.Headers))
+	for k, v := range d.Headers {
+		if s, ok := v.(string); ok {
+			headers[k] = s
+		}
+	}
 	return queue.Delivery{
-		Body: d.Body,
+		Body:    d.Body,
+		Headers: headers,
 		Ack: func() error {
 			return d.Ack(false)
 		},

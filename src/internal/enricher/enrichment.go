@@ -3,14 +3,21 @@ package enricher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
+	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 )
@@ -18,6 +25,8 @@ import (
 // defaultMaintenanceInterval is the interval between maintenance loop iterations.
 // Maintenance reclaims stale jobs and cleans up old completed/failed jobs.
 const defaultMaintenanceInterval = 5 * time.Minute
+
+var tracer = otel.Tracer("mnemonic/enricher")
 
 // jobMessage is the JSON payload delivered by the queue for each enrichment job.
 type jobMessage struct {
@@ -28,21 +37,24 @@ type jobMessage struct {
 // them using the EnrichmentService. A configurable semaphore bounds concurrent
 // job goroutines, and a single maintenance goroutine handles periodic cleanup.
 type Worker struct {
-	svc    enrichmentsvc.Service
-	sub    queue.Subscriber
-	cfg    config.EnrichmentConfig
-	logger zerolog.Logger
+	svc        enrichmentsvc.Service
+	sub        queue.Subscriber
+	cfg        config.EnrichmentConfig
+	logger     zerolog.Logger
+	jobMetrics *metrics.Jobs
 }
 
 // New creates a Worker that processes enrichment jobs using svc, consuming
 // messages from sub, configured by cfg. The logger is used for structured
-// logging of worker lifecycle events and errors.
-func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentConfig, logger zerolog.Logger) *Worker {
+// logging of worker lifecycle events and errors. jobMetrics, when non-nil,
+// records the count and duration of every handled delivery.
+func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentConfig, logger zerolog.Logger, jobMetrics *metrics.Jobs) *Worker {
 	return &Worker{
-		svc:    svc,
-		sub:    sub,
-		cfg:    cfg,
-		logger: logger.With().Str("component", "enrichment_worker").Logger(),
+		svc:        svc,
+		sub:        sub,
+		cfg:        cfg,
+		logger:     logger.With().Str("component", "enrichment_worker").Logger(),
+		jobMetrics: jobMetrics,
 	}
 }
 
@@ -129,16 +141,48 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 // handleDelivery unmarshals a queue delivery, looks up the job, marks it as
-// processing, and runs the enrichment pipeline. It calls d.Ack on success and
-// d.Nack(false) on unrecoverable errors (parse failures, lookup failures,
-// state-transition failures). drainCtx remains live through the drain phase so
-// that in-flight work can complete gracefully after the main ctx is cancelled.
+// processing, and runs the enrichment pipeline. It calls d.Ack when the
+// pipeline ran (successfully or with a recorded failure) and d.Nack(false) on
+// unrecoverable errors (parse failures, lookup failures, state-transition
+// failures, unrecorded pipeline failures). drainCtx remains live through the
+// drain phase so that in-flight work can complete gracefully after the main
+// ctx is cancelled.
+//
+// Each delivery gets a consumer span that continues the producer's trace from
+// the message headers, and one record in the job metrics.
 func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
+	start := time.Now()
+	ctx := otel.GetTextMapPropagator().Extract(drainCtx, propagation.MapCarrier(d.Headers))
+	ctx, span := tracer.Start(ctx, "process "+w.sub.Name(),
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.operation.type", "process"),
+			attribute.String("messaging.destination.name", w.sub.Name()),
+		),
+	)
+
+	outcome := metrics.OutcomeRejected
+	var spanErr error
+	defer func() {
+		if spanErr != nil {
+			span.RecordError(spanErr)
+			span.SetStatus(codes.Error, spanErr.Error())
+		}
+		span.End()
+		if w.jobMetrics != nil {
+			w.jobMetrics.Record(ctx, outcome, time.Since(start))
+		}
+	}()
+
 	log := w.logger
+	if sc := span.SpanContext(); sc.IsValid() {
+		log = log.With().Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String()).Logger()
+	}
 
 	// Parse the job message.
 	var msg jobMessage
 	if err := json.Unmarshal(d.Body, &msg); err != nil {
+		spanErr = err
 		log.Error().Err(err).Msg("failed to parse delivery body; nacking")
 		if nackErr := d.Nack(false); nackErr != nil {
 			log.Error().Err(nackErr).Msg("nack failed after parse error")
@@ -147,11 +191,13 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 	}
 
 	jobID := msg.JobID
+	span.SetAttributes(attribute.String("mnemonic.job_id", jobID.String()))
 	log = log.With().Str("job_id", jobID.String()).Logger()
 
 	// Look up the job.
-	job, err := w.svc.GetJob(drainCtx, jobID)
+	job, err := w.svc.GetJob(ctx, jobID)
 	if err != nil {
+		spanErr = err
 		log.Error().Err(err).Msg("failed to get job; nacking")
 		if nackErr := d.Nack(false); nackErr != nil {
 			log.Error().Err(nackErr).Msg("nack failed after GetJob error")
@@ -160,7 +206,8 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 	}
 
 	// Mark the job as processing.
-	if err := w.svc.MarkJobProcessing(drainCtx, jobID); err != nil {
+	if err := w.svc.MarkJobProcessing(ctx, jobID); err != nil {
+		spanErr = err
 		log.Error().Err(err).Msg("failed to mark job processing; nacking")
 		if nackErr := d.Nack(false); nackErr != nil {
 			log.Error().Err(nackErr).Msg("nack failed after MarkJobProcessing error")
@@ -170,30 +217,38 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 
 	logEvent := log.Info()
 	if job.PatternID != nil {
+		span.SetAttributes(attribute.String("mnemonic.pattern_id", job.PatternID.String()))
 		logEvent = logEvent.Str("pattern_id", job.PatternID.String())
 	}
 	if job.ChunkID != nil {
+		span.SetAttributes(attribute.String("mnemonic.chunk_id", job.ChunkID.String()))
 		logEvent = logEvent.Str("chunk_id", job.ChunkID.String())
 	}
 	logEvent.Msg("processing enrichment job")
 
 	// Run the enrichment pipeline.
-	if err := w.svc.ProcessJob(drainCtx, job); err != nil {
-		// Non-nil error from ProcessJob means the failure could not be
-		// recorded (unrecoverable). Log at error level but still ack so we
-		// don't requeue a job stuck in an unrecoverable state.
-		log.Error().
-			Err(err).
-			Msg("enrichment job failed with unrecoverable error")
+	err = w.svc.ProcessJob(ctx, job)
+	switch {
+	case err == nil:
+		outcome = metrics.OutcomeCompleted
+		log.Info().Msg("enrichment job completed")
+	case errors.Is(err, enrichmentsvc.ErrJobFailed):
+		// The failure is recorded on the job for retry, so the message is done.
+		outcome, spanErr = metrics.OutcomeFailed, err
+		log.Warn().Err(err).Msg("enrichment job failed; failure recorded")
+	default:
+		// The failure could not be recorded (unrecoverable). Nack without
+		// requeue so we don't loop on a job stuck in an unrecoverable state.
+		outcome, spanErr = metrics.OutcomeError, err
+		log.Error().Err(err).Msg("enrichment job failed with unrecoverable error")
 		if nackErr := d.Nack(false); nackErr != nil {
 			log.Error().Err(nackErr).Msg("nack failed after ProcessJob error")
 		}
 		return
 	}
 
-	log.Info().Msg("enrichment job completed")
 	if ackErr := d.Ack(); ackErr != nil {
-		log.Error().Err(ackErr).Msg("ack failed after successful processing")
+		log.Error().Err(ackErr).Msg("ack failed after processing")
 	}
 }
 
