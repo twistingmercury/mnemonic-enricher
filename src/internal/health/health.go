@@ -185,7 +185,7 @@ func openAIModelCheck(baseURL, apiKey, model string) heartbeat.CheckFunc {
 			}
 			return status
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 
 		status.StatusCode = resp.StatusCode
