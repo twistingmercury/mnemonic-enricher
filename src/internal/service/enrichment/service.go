@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -27,9 +28,14 @@ var ErrJobFailed = errors.New("enrichment job failed; failure recorded")
 
 // Service defines the worker-facing interface for processing enrichment jobs.
 type Service interface {
-	// StartJob marks a job as processing and returns it.
-	// Returns enrichmentjob.ErrNotFound if no job with the given ID exists.
+	// StartJob marks a pending, due job as processing and returns it.
+	// Returns enrichmentjob.ErrUnavailable if the job is missing, already
+	// started, or waiting out its retry delay.
 	StartJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error)
+
+	// ClaimDueJobs marks up to limit jobs that are due for a retry, or that
+	// no queue delivery started, as processing and returns them.
+	ClaimDueJobs(ctx context.Context, limit int) ([]*enrichmentjob.Job, error)
 
 	// ProcessJob runs the enrichment pipeline for a started job. A chunk job
 	// embeds its chunk; the last chunk of a pattern to finish also extracts
@@ -107,9 +113,24 @@ func New(
 	}, nil
 }
 
-// StartJob marks a job as processing and returns it.
+// StartJob marks a pending, due job as processing and returns it.
 func (s *enrichmentService) StartJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
 	return s.jobRepo.Start(ctx, jobID)
+}
+
+// undeliveredJobGrace is how long a new job may stay pending before the retry
+// sweep takes it instead of waiting for its queue message. It covers jobs the
+// API saved but failed to publish.
+const undeliveredJobGrace = 2 * time.Minute
+
+// ClaimDueJobs claims jobs waiting for a retry, and jobs pending longer than
+// undeliveredJobGrace, up to limit.
+func (s *enrichmentService) ClaimDueJobs(ctx context.Context, limit int) ([]*enrichmentjob.Job, error) {
+	jobs, err := s.jobRepo.ClaimDue(ctx, undeliveredJobGrace, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim due jobs: %w", err)
+	}
+	return jobs, nil
 }
 
 // ProcessJob dispatches to the chunk-based or pattern-based pipeline based on

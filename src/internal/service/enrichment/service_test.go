@@ -34,6 +34,12 @@ func (m *mockJobRepo) Start(ctx context.Context, id uuid.UUID) (*enrichmentjob.J
 	return job, args.Error(1)
 }
 
+func (m *mockJobRepo) ClaimDue(ctx context.Context, grace time.Duration, limit int) ([]*enrichmentjob.Job, error) {
+	args := m.Called(ctx, grace, limit)
+	jobs, _ := args.Get(0).([]*enrichmentjob.Job)
+	return jobs, args.Error(1)
+}
+
 func (m *mockJobRepo) MarkCompleted(ctx context.Context, id uuid.UUID) error {
 	return m.Called(ctx, id).Error(0)
 }
@@ -337,16 +343,48 @@ func TestStartJob(t *testing.T) {
 		assertExpectations(t, deps)
 	})
 
-	t.Run("propagates not-found error", func(t *testing.T) {
+	t.Run("propagates unavailable error", func(t *testing.T) {
 		t.Parallel()
 
 		svc, deps := newTestService(t)
-		deps.jobRepo.On("Start", mock.Anything, testJobID).Return(nil, enrichmentjob.ErrNotFound)
+		deps.jobRepo.On("Start", mock.Anything, testJobID).Return(nil, enrichmentjob.ErrUnavailable)
 
 		result, err := svc.StartJob(context.Background(), testJobID)
 
-		require.ErrorIs(t, err, enrichmentjob.ErrNotFound)
+		require.ErrorIs(t, err, enrichmentjob.ErrUnavailable)
 		assert.Nil(t, result)
+		assertExpectations(t, deps)
+	})
+}
+
+// ---------- ClaimDueJobs ----------
+
+func TestClaimDueJobs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("claims with a grace period for undelivered jobs", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		jobs := []*enrichmentjob.Job{testChunkJob()}
+		deps.jobRepo.On("ClaimDue", mock.Anything, 2*time.Minute, 3).Return(jobs, nil)
+
+		got, err := svc.ClaimDueJobs(context.Background(), 3)
+
+		require.NoError(t, err)
+		assert.Equal(t, jobs, got)
+		assertExpectations(t, deps)
+	})
+
+	t.Run("wraps repository errors", func(t *testing.T) {
+		t.Parallel()
+
+		svc, deps := newTestService(t)
+		deps.jobRepo.On("ClaimDue", mock.Anything, mock.Anything, 1).Return(nil, errors.New("db down"))
+
+		_, err := svc.ClaimDueJobs(context.Background(), 1)
+
+		require.ErrorContains(t, err, "claim due jobs: db down")
 		assertExpectations(t, deps)
 	})
 }

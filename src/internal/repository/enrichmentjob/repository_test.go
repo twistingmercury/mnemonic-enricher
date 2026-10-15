@@ -30,27 +30,27 @@ func TestRepository_Start(t *testing.T) {
 		{
 			name: "marks processing and returns the job",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				mock.ExpectQuery("UPDATE enrichment_jobs SET").
-					WithArgs(jobID, "processing").
+				mock.ExpectQuery("WHERE id = \\$1 AND status = \\$3 AND scheduled_for <= now\\(\\)").
+					WithArgs(jobID, "processing", "pending").
 					WillReturnRows(pgxmock.NewRows([]string{"id", "pattern_id", "chunk_id"}).
 						AddRow(jobID, (*uuid.UUID)(nil), &chunkID))
 			},
 			want: &enrichmentjob.Job{ID: jobID, ChunkID: &chunkID},
 		},
 		{
-			name: "not found returns ErrNotFound",
+			name: "missing, started or not due returns ErrUnavailable",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("UPDATE enrichment_jobs SET").
-					WithArgs(jobID, "processing").
+					WithArgs(jobID, "processing", "pending").
 					WillReturnError(pgx.ErrNoRows)
 			},
-			wantErr: enrichmentjob.ErrNotFound,
+			wantErr: enrichmentjob.ErrUnavailable,
 		},
 		{
 			name: "database error is wrapped",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("UPDATE enrichment_jobs SET").
-					WithArgs(jobID, "processing").
+					WithArgs(jobID, "processing", "pending").
 					WillReturnError(errors.New("connection refused"))
 			},
 			wantErr: errors.New("start job: connection refused"),
@@ -70,7 +70,7 @@ func TestRepository_Start(t *testing.T) {
 			got, err := enrichmentjob.NewRepository(mock).Start(context.Background(), jobID)
 
 			switch {
-			case errors.Is(tt.wantErr, enrichmentjob.ErrNotFound):
+			case errors.Is(tt.wantErr, enrichmentjob.ErrUnavailable):
 				assert.ErrorIs(t, err, tt.wantErr)
 			case tt.wantErr != nil:
 				assert.EqualError(t, err, tt.wantErr.Error())
@@ -82,6 +82,67 @@ func TestRepository_Start(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestRepository_ClaimDue(t *testing.T) {
+	t.Parallel()
+
+	chunkA, chunkB := uuid.New(), uuid.New()
+	jobA, jobB := uuid.New(), uuid.New()
+
+	t.Run("claims due jobs with SKIP LOCKED", func(t *testing.T) {
+		t.Parallel()
+
+		mock, err := pgxmock.NewPool()
+		require.NoError(t, err)
+		defer mock.Close()
+
+		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
+			WithArgs("processing", "pending", "120 seconds", 4).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "pattern_id", "chunk_id"}).
+				AddRow(jobA, (*uuid.UUID)(nil), &chunkA).
+				AddRow(jobB, (*uuid.UUID)(nil), &chunkB))
+
+		got, err := enrichmentjob.NewRepository(mock).ClaimDue(context.Background(), 2*time.Minute, 4)
+
+		require.NoError(t, err)
+		assert.Equal(t, []*enrichmentjob.Job{{ID: jobA, ChunkID: &chunkA}, {ID: jobB, ChunkID: &chunkB}}, got)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("no due jobs returns an empty result", func(t *testing.T) {
+		t.Parallel()
+
+		mock, err := pgxmock.NewPool()
+		require.NoError(t, err)
+		defer mock.Close()
+
+		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
+			WithArgs("processing", "pending", "120 seconds", 4).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "pattern_id", "chunk_id"}))
+
+		got, err := enrichmentjob.NewRepository(mock).ClaimDue(context.Background(), 2*time.Minute, 4)
+
+		require.NoError(t, err)
+		assert.Empty(t, got)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("database error is wrapped", func(t *testing.T) {
+		t.Parallel()
+
+		mock, err := pgxmock.NewPool()
+		require.NoError(t, err)
+		defer mock.Close()
+
+		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
+			WithArgs("processing", "pending", "120 seconds", 4).
+			WillReturnError(errors.New("boom"))
+
+		_, err = enrichmentjob.NewRepository(mock).ClaimDue(context.Background(), 2*time.Minute, 4)
+
+		assert.ErrorContains(t, err, "claim due jobs: boom")
+	})
 }
 
 func TestRepository_MarkCompleted(t *testing.T) {

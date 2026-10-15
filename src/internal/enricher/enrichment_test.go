@@ -29,7 +29,15 @@ import (
 // values. StartJob and ProcessJob are set via function fields.
 type concurrentService struct {
 	startJobFunc func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
+	claimDueFunc func(ctx context.Context, limit int) ([]*enrichmentjob.Job, error)
 	processFunc  func(ctx context.Context, job *enrichmentjob.Job) error
+}
+
+func (s *concurrentService) ClaimDueJobs(ctx context.Context, limit int) ([]*enrichmentjob.Job, error) {
+	if s.claimDueFunc != nil {
+		return s.claimDueFunc(ctx, limit)
+	}
+	return nil, nil
 }
 
 func (s *concurrentService) StartJob(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
@@ -67,6 +75,12 @@ func (m *mockService) StartJob(ctx context.Context, jobID uuid.UUID) (*enrichmen
 	args := m.Called(ctx, jobID)
 	job, _ := args.Get(0).(*enrichmentjob.Job)
 	return job, args.Error(1)
+}
+
+// ClaimDueJobs returns no jobs: the retry sweep's default interval is longer
+// than any test using mockService runs.
+func (m *mockService) ClaimDueJobs(_ context.Context, _ int) ([]*enrichmentjob.Job, error) {
+	return nil, nil
 }
 
 func (m *mockService) ProcessJob(ctx context.Context, job *enrichmentjob.Job) error {
@@ -275,6 +289,73 @@ func TestWorkerNacksOnStartJobFailure(t *testing.T) {
 	assert.False(t, ackCalled.Load(), "delivery should not be acked when StartJob fails")
 	assert.True(t, nackCalled.Load(), "delivery should be nacked when StartJob fails")
 	svc.AssertNotCalled(t, "ProcessJob", mock.Anything, mock.Anything)
+}
+
+func TestWorkerAcksUnavailableJob(t *testing.T) {
+	t.Parallel()
+
+	job := newTestJob()
+	var ackCalled, nackCalled atomic.Bool
+
+	svc := new(mockService)
+	svc.On("StartJob", mock.Anything, job.ID).Return(nil, enrichmentjob.ErrUnavailable)
+	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+
+	sub := &mockSubscriber{
+		name:       "test-queue",
+		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
+	}
+
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	require.NoError(t, w.Run(ctx))
+	assert.True(t, ackCalled.Load(), "a job that is not available to start should be acked")
+	assert.False(t, nackCalled.Load())
+	svc.AssertNotCalled(t, "ProcessJob", mock.Anything, mock.Anything)
+}
+
+func TestWorkerRunsJobsDueForRetry(t *testing.T) {
+	t.Parallel()
+
+	job := newChunkOnlyJob()
+	var claims atomic.Int32
+	processed := make(chan *enrichmentjob.Job, 1)
+
+	svc := &concurrentService{
+		claimDueFunc: func(_ context.Context, limit int) ([]*enrichmentjob.Job, error) {
+			if claims.Add(1) == 1 {
+				assert.Equal(t, 2, limit, "claims only as many jobs as there are free workers")
+				return []*enrichmentjob.Job{job}, nil
+			}
+			return nil, nil
+		},
+		processFunc: func(_ context.Context, j *enrichmentjob.Job) error {
+			processed <- j
+			return nil
+		},
+	}
+	sub := &mockSubscriber{name: "test-queue"}
+
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
+	enricher.SetRetryInterval(w, 10*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case got := <-processed:
+		assert.Equal(t, job, got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("job due for retry was not processed")
+	}
+	cancel()
+	require.NoError(t, <-done)
 }
 
 func TestWorkerNacksOnProcessJobFailure(t *testing.T) {

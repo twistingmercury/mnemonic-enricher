@@ -19,12 +19,18 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
+	"github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 )
 
 // defaultMaintenanceInterval is the interval between maintenance loop iterations.
 // Maintenance reclaims stale jobs and cleans up old completed/failed jobs.
 const defaultMaintenanceInterval = 5 * time.Minute
+
+// defaultRetryInterval is how often the worker claims jobs due for a retry.
+// It is shorter than the default retry delay so retries run close to when
+// they are scheduled.
+const defaultRetryInterval = 15 * time.Second
 
 var tracer = otel.Tracer("mnemonic/enricher")
 
@@ -42,6 +48,9 @@ type Worker struct {
 	cfg        config.EnrichmentConfig
 	logger     zerolog.Logger
 	jobMetrics *metrics.Jobs
+
+	// retryInterval is how often Run claims jobs due for a retry.
+	retryInterval time.Duration
 }
 
 // New creates a Worker that processes enrichment jobs using svc, consuming
@@ -55,11 +64,15 @@ func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentC
 		cfg:        cfg,
 		logger:     logger.With().Str("component", "enrichment_worker").Logger(),
 		jobMetrics: jobMetrics,
+
+		retryInterval: defaultRetryInterval,
 	}
 }
 
 // Run subscribes to the queue and fans out deliveries to bounded goroutines.
-// It blocks until ctx is cancelled.
+// Every retryInterval it also claims jobs due for a retry, since a failed
+// job's message is already gone from the queue. It blocks until ctx is
+// cancelled.
 //
 // On shutdown (ctx cancellation), Run performs a two-phase graceful drain:
 //  1. Stop consuming new deliveries (the subscriber stops emitting when ctx is cancelled).
@@ -103,11 +116,9 @@ func (w *Worker) Run(ctx context.Context) error {
 		Str("queue", w.sub.Name()).
 		Msg("enrichment worker started")
 
-	// Fan-out: for each delivery, acquire a semaphore slot and process in a
-	// goroutine. The loop exits when the deliveries channel is closed (which
-	// happens when ctx is cancelled by the subscriber implementation).
-	for d := range deliveries {
-		d := d // capture loop variable
+	// dispatch runs work in a goroutine once a semaphore slot is free. Work
+	// gets drainCtx so it can finish after ctx is cancelled.
+	dispatch := func(work func(context.Context)) {
 		semaphore <- struct{}{}
 		inflight.Add(1)
 		allDone.Add(1)
@@ -117,8 +128,37 @@ func (w *Worker) Run(ctx context.Context) error {
 				inflight.Done()
 				allDone.Done()
 			}()
-			w.handleDelivery(drainCtx, d)
+			work(drainCtx)
 		}()
+	}
+
+	sweep := time.NewTicker(w.retryInterval)
+	defer sweep.Stop()
+
+	// Fan out deliveries and due retries. The loop exits when the deliveries
+	// channel is closed, which the subscriber does when ctx is cancelled.
+loop:
+	for {
+		select {
+		case d, ok := <-deliveries:
+			if !ok {
+				break loop
+			}
+			dispatch(func(ctx context.Context) { w.handleDelivery(ctx, d) })
+		case <-sweep.C:
+			free := cap(semaphore) - len(semaphore)
+			if ctx.Err() != nil || free == 0 {
+				continue
+			}
+			jobs, err := w.svc.ClaimDueJobs(ctx, free)
+			if err != nil {
+				w.logger.Error().Err(err).Msg("failed to claim jobs due for retry")
+				continue
+			}
+			for _, job := range jobs {
+				dispatch(func(ctx context.Context) { w.handleRetry(ctx, job) })
+			}
+		}
 	}
 
 	// Drain phase: wait for in-flight handleDelivery calls to complete, bounded
@@ -142,10 +182,11 @@ func (w *Worker) Run(ctx context.Context) error {
 
 // handleDelivery unmarshals a queue delivery, starts the job, and runs the
 // enrichment pipeline. It calls d.Ack when the pipeline ran (successfully or
-// with a recorded failure) and d.Nack(false) on unrecoverable errors (parse
-// failures, start failures, unrecorded pipeline failures). drainCtx remains live through the
-// drain phase so that in-flight work can complete gracefully after the main
-// ctx is cancelled.
+// with a recorded failure) or the job is not available to start (already
+// started, finished, or waiting for a retry), and d.Nack(false) on
+// unrecoverable errors (parse failures, start failures, unrecorded pipeline
+// failures). drainCtx remains live through the drain phase so that in-flight
+// work can complete gracefully after the main ctx is cancelled.
 //
 // Each delivery gets a consumer span that continues the producer's trace from
 // the message headers, and one record in the job metrics.
@@ -162,30 +203,21 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 
 	outcome := metrics.OutcomeRejected
 	var spanErr error
-	defer func() {
-		if spanErr != nil {
-			span.RecordError(spanErr)
-			span.SetStatus(codes.Error, spanErr.Error())
-		}
-		span.End()
-		if w.jobMetrics != nil {
-			w.jobMetrics.Record(ctx, outcome, time.Since(start))
-		}
-	}()
+	defer func() { w.finish(ctx, span, spanErr, outcome, start) }()
 
-	log := w.logger
-	if sc := span.SpanContext(); sc.IsValid() {
-		log = log.With().Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String()).Logger()
+	log := w.spanLogger(span)
+	nack := func(msg string) {
+		log.Error().Err(spanErr).Msg(msg + "; nacking")
+		if nackErr := d.Nack(false); nackErr != nil {
+			log.Error().Err(nackErr).Msg("nack failed")
+		}
 	}
 
 	// Parse the job message.
 	var msg jobMessage
 	if err := json.Unmarshal(d.Body, &msg); err != nil {
 		spanErr = err
-		log.Error().Err(err).Msg("failed to parse delivery body; nacking")
-		if nackErr := d.Nack(false); nackErr != nil {
-			log.Error().Err(nackErr).Msg("nack failed after parse error")
-		}
+		nack("failed to parse delivery body")
 		return
 	}
 
@@ -195,15 +227,55 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 
 	// Mark the job as processing and load what it targets.
 	job, err := w.svc.StartJob(ctx, jobID)
-	if err != nil {
-		spanErr = err
-		log.Error().Err(err).Msg("failed to start job; nacking")
-		if nackErr := d.Nack(false); nackErr != nil {
-			log.Error().Err(nackErr).Msg("nack failed after StartJob error")
+	switch {
+	case errors.Is(err, enrichmentjob.ErrUnavailable):
+		// A redelivered message, a job the retry sweep already took, or one
+		// waiting out its retry delay: the sweep owns it now.
+		log.Info().Msg("job not available to start; acking")
+		if ackErr := d.Ack(); ackErr != nil {
+			log.Error().Err(ackErr).Msg("ack failed")
 		}
+		return
+	case err != nil:
+		spanErr = err
+		nack("failed to start job")
 		return
 	}
 
+	outcome, spanErr = w.runJob(ctx, span, log, job)
+	if outcome == metrics.OutcomeError {
+		// The failure could not be recorded (unrecoverable). Nack without
+		// requeue so we don't loop on a job stuck in an unrecoverable state.
+		nack("enrichment job failed with unrecoverable error")
+		return
+	}
+
+	if ackErr := d.Ack(); ackErr != nil {
+		log.Error().Err(ackErr).Msg("ack failed after processing")
+	}
+}
+
+// handleRetry runs the pipeline for a job the retry sweep claimed. It gets its
+// own span and one record in the job metrics, like a delivery.
+func (w *Worker) handleRetry(drainCtx context.Context, job *enrichmentjob.Job) {
+	start := time.Now()
+	ctx, span := tracer.Start(drainCtx, "retry enrichment job",
+		trace.WithAttributes(attribute.String("mnemonic.job_id", job.ID.String())),
+	)
+	log := w.spanLogger(span).With().Str("job_id", job.ID.String()).Bool("retry", true).Logger()
+
+	outcome, spanErr := w.runJob(ctx, span, log, job)
+	if outcome == metrics.OutcomeError {
+		// Left in processing; ReclaimStale returns it to pending after the
+		// job timeout.
+		log.Error().Err(spanErr).Msg("enrichment job retry failed with unrecoverable error")
+	}
+	w.finish(ctx, span, spanErr, outcome, start)
+}
+
+// runJob runs the enrichment pipeline for a started job and returns its
+// outcome and the error to record on the span, if any.
+func (w *Worker) runJob(ctx context.Context, span trace.Span, log zerolog.Logger, job *enrichmentjob.Job) (string, error) {
 	logEvent := log.Info()
 	if job.PatternID != nil {
 		span.SetAttributes(attribute.String("mnemonic.pattern_id", job.PatternID.String()))
@@ -215,29 +287,38 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 	}
 	logEvent.Msg("processing enrichment job")
 
-	// Run the enrichment pipeline.
-	err = w.svc.ProcessJob(ctx, job)
+	err := w.svc.ProcessJob(ctx, job)
 	switch {
 	case err == nil:
-		outcome = metrics.OutcomeCompleted
 		log.Info().Msg("enrichment job completed")
+		return metrics.OutcomeCompleted, nil
 	case errors.Is(err, enrichmentsvc.ErrJobFailed):
-		// The failure is recorded on the job for retry, so the message is done.
-		outcome, spanErr = metrics.OutcomeFailed, err
+		// The failure is recorded on the job, which the sweep retries.
 		log.Warn().Err(err).Msg("enrichment job failed; failure recorded")
+		return metrics.OutcomeFailed, err
 	default:
-		// The failure could not be recorded (unrecoverable). Nack without
-		// requeue so we don't loop on a job stuck in an unrecoverable state.
-		outcome, spanErr = metrics.OutcomeError, err
-		log.Error().Err(err).Msg("enrichment job failed with unrecoverable error")
-		if nackErr := d.Nack(false); nackErr != nil {
-			log.Error().Err(nackErr).Msg("nack failed after ProcessJob error")
-		}
-		return
+		return metrics.OutcomeError, err
 	}
+}
 
-	if ackErr := d.Ack(); ackErr != nil {
-		log.Error().Err(ackErr).Msg("ack failed after processing")
+// spanLogger returns the worker logger tagged with span's trace and span IDs.
+func (w *Worker) spanLogger(span trace.Span) zerolog.Logger {
+	if sc := span.SpanContext(); sc.IsValid() {
+		return w.logger.With().Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String()).Logger()
+	}
+	return w.logger
+}
+
+// finish ends span, marking it failed when err is non-nil, and records the
+// job's outcome and duration.
+func (w *Worker) finish(ctx context.Context, span trace.Span, err error, outcome string, start time.Time) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+	if w.jobMetrics != nil {
+		w.jobMetrics.Record(ctx, outcome, time.Since(start))
 	}
 }
 
