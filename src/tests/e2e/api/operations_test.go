@@ -45,7 +45,7 @@ func TestHealthCheck_AllHealthyReturns200(t *testing.T) {
 	helpers.AssertStatusCode(t, resp, http.StatusOK)
 
 	// The heartbeat library returns a Response struct with fields:
-	//   status, name, resource, machine, utc_DateTime, request_duration_ms, dependencies
+	//   status, name, resource, machine, utc_date_time, request_duration_ms, dependencies
 	// Use a flexible map to parse the response.
 	body := helpers.ParseJSON[map[string]any](t, resp)
 
@@ -54,11 +54,8 @@ func TestHealthCheck_AllHealthyReturns200(t *testing.T) {
 		t.Fatalf("expected 'status' field to be a string, got %T", body["status"])
 	}
 
-	// Healthy status is "OK" or "NotSet" (when only placeholder deps exist).
-	// Both map to HTTP 200 in the heartbeat library.
-	validStatuses := map[string]bool{"OK": true, "NotSet": true}
-	if !validStatuses[status] {
-		t.Fatalf("expected status to be 'OK' or 'NotSet', got %q", status)
+	if status != "OK" {
+		t.Fatalf("expected status to be 'OK', got %q", status)
 	}
 
 	// Verify name field is "mnemonic"
@@ -87,8 +84,8 @@ func TestHealthCheck_NoAuthRequired(t *testing.T) {
 }
 
 // TestHealthCheck_ResponseContainsAllComponents verifies the dependencies array
-// in the response contains entries for PostgreSQL, Neo4j, and the two OpenAI
-// placeholders registered via the health package.
+// in the response contains entries for PostgreSQL and Neo4j, the dependencies
+// registered via the health package.
 func TestHealthCheck_ResponseContainsAllComponents(t *testing.T) {
 	client := helpers.NewTestClient(t)
 
@@ -112,13 +109,10 @@ func TestHealthCheck_ResponseContainsAllComponents(t *testing.T) {
 		t.Fatalf("expected 'dependencies' to be an array, got %T", depsRaw)
 	}
 
-	// The health package registers 4 dependency descriptors:
-	//   "PostgreSQL", "Neo4j", "OpenAI embedding model", "OpenAI extraction model"
+	// The health package registers 2 dependency descriptors.
 	expectedNames := map[string]bool{
-		"PostgreSQL":              false,
-		"Neo4j":                   false,
-		"OpenAI embedding model":  false,
-		"OpenAI extraction model": false,
+		"PostgreSQL": false,
+		"Neo4j":      false,
 	}
 
 	for _, d := range deps {

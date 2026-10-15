@@ -28,7 +28,7 @@ import (
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
-	otelxgin "github.com/twistingmercury/otelx/middleware/gin"
+	otelxgin "github.com/twistingmercury/otelx/middleware/gin/v2"
 )
 
 // ListenAndServe starts the mnemonic server. It initializes telemetry,

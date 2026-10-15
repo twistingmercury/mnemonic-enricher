@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/twistingmercury/heartbeat"
+	"github.com/twistingmercury/heartbeat/v2"
 )
 
 // checkTimeout is the per-check timeout used when probing dependencies.
@@ -49,28 +49,16 @@ func Initialize(deps Dependencies) error {
 
 	descriptors = []heartbeat.DependencyDescriptor{
 		{
-			Name:        "PostgreSQL",
-			Type:        "database",
-			Timeout:     checkTimeout,
-			HandlerFunc: checkPostgreSQLHealth,
+			Name:      "PostgreSQL",
+			Type:      "database",
+			Timeout:   checkTimeout,
+			CheckFunc: checkPostgreSQLHealth,
 		},
 		{
-			Name:        "Neo4j",
-			Type:        "database",
-			Timeout:     checkTimeout,
-			HandlerFunc: checkNeo4jHealth,
-		},
-		{
-			Name:        "OpenAI embedding model",
-			Type:        "external_api",
-			Timeout:     checkTimeout,
-			HandlerFunc: checkEmbeddingModel,
-		},
-		{
-			Name:        "OpenAI extraction model",
-			Type:        "external_api",
-			Timeout:     checkTimeout,
-			HandlerFunc: checkExtractionModel,
+			Name:      "Neo4j",
+			Type:      "database",
+			Timeout:   checkTimeout,
+			CheckFunc: checkNeo4jHealth,
 		},
 	}
 
@@ -92,7 +80,7 @@ func CheckHealth() error {
 
 	var errs error
 	for _, ds := range depResults {
-		if ds.Status != heartbeat.StatusOK && ds.Status != heartbeat.StatusNotSet {
+		if ds.Status != heartbeat.StatusOK {
 			err := fmt.Errorf("failed to verify health for %s: %s", ds.Resource, ds.Message)
 			errs = errors.Join(errs, err)
 		}
@@ -101,68 +89,42 @@ func CheckHealth() error {
 	return errs
 }
 
-// checkPostgreSQLHealth pings the PostgreSQL connection pool.
-func checkPostgreSQLHealth() (status heartbeat.StatusResult) {
+// checkPostgreSQLHealth pings the PostgreSQL connection pool. heartbeat
+// cancels ctx when the check's timeout expires and records the duration.
+func checkPostgreSQLHealth(ctx context.Context) (status heartbeat.StatusResult) {
 	if healthDeps == nil || healthDeps.PGPool == nil {
 		status.Status = heartbeat.StatusCritical
 		status.Message = "PostgreSQL pool not initialized"
 		return status
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
-	defer cancel()
-
-	start := time.Now()
 	if err := healthDeps.PGPool.Ping(ctx); err != nil {
 		status.Status = heartbeat.StatusCritical
 		status.Message = fmt.Sprintf("ping failed: %v", err)
-		status.RequestDuration = float64(time.Since(start).Microseconds()) / 1000
 		return status
 	}
 
 	status.Status = heartbeat.StatusOK
 	status.Message = "ok"
-	status.RequestDuration = float64(time.Since(start).Microseconds()) / 1000
 	return status
 }
 
-// checkNeo4jHealth verifies Neo4j driver connectivity.
-func checkNeo4jHealth() (status heartbeat.StatusResult) {
+// checkNeo4jHealth verifies Neo4j driver connectivity. heartbeat cancels ctx
+// when the check's timeout expires and records the duration.
+func checkNeo4jHealth(ctx context.Context) (status heartbeat.StatusResult) {
 	if healthDeps == nil || healthDeps.Neo4jDriver == nil {
 		status.Status = heartbeat.StatusCritical
 		status.Message = "Neo4j driver not initialized"
 		return status
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
-	defer cancel()
-
-	start := time.Now()
 	if err := healthDeps.Neo4jDriver.VerifyConnectivity(ctx); err != nil {
 		status.Status = heartbeat.StatusCritical
 		status.Message = fmt.Sprintf("connectivity check failed: %v", err)
-		status.RequestDuration = float64(time.Since(start).Microseconds()) / 1000
 		return status
 	}
 
 	status.Status = heartbeat.StatusOK
 	status.Message = "ok"
-	status.RequestDuration = float64(time.Since(start).Microseconds()) / 1000
-	return status
-}
-
-// checkEmbeddingModel is a placeholder. OpenAI does not expose a lightweight
-// ping endpoint, so we report StatusNotSet until a practical check is available.
-func checkEmbeddingModel() (status heartbeat.StatusResult) {
-	status.Status = heartbeat.StatusNotSet
-	status.Message = "no ping endpoint available"
-	return status
-}
-
-// checkExtractionModel is a placeholder. OpenAI does not expose a lightweight
-// ping endpoint, so we report StatusNotSet until a practical check is available.
-func checkExtractionModel() (status heartbeat.StatusResult) {
-	status.Status = heartbeat.StatusNotSet
-	status.Message = "no ping endpoint available"
 	return status
 }
