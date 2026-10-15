@@ -56,7 +56,10 @@ jobs:
           IMAGE_NAME: ghcr.io/twistingmercury/mnemonic-enrichment
         run: ./build/build.sh
 
+      # Pull request builds are tested but never published, so latest-dev
+      # always matches develop.
       - name: Push image tags
+        if: github.event_name != 'pull_request'
         run: |
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')
           if [[ "${{ github.ref_name }}" == "main" ]]; then
