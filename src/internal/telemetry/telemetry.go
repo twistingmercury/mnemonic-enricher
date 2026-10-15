@@ -9,9 +9,11 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	"github.com/twistingmercury/mnemonic-enricher/internal/version"
-	"github.com/twistingmercury/otelx"
+	"github.com/twistingmercury/otelx/v2"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,12 +28,12 @@ type Telemetry struct {
 // It sets up logging, metrics, and tracing based on the provided configuration.
 // Returns an error if the log level is invalid or telemetry initialization fails.
 func Initialize(ctx context.Context, cfg *config.MnemonicConfig) (*Telemetry, error) {
-	opts, err := buildOptions(cfg)
+	otelCfg, err := buildConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build telemetry options: %w", err)
+		return nil, fmt.Errorf("failed to build telemetry config: %w", err)
 	}
 
-	tel, err := otelx.Initialize(ctx, opts...)
+	tel, err := otelx.Initialize(ctx, otelCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize telemetry: %w", err)
 	}
@@ -57,52 +59,46 @@ func Initialize(ctx context.Context, cfg *config.MnemonicConfig) (*Telemetry, er
 	}, nil
 }
 
-// buildOptions constructs otelx options from the configuration.
-// Returns an error if the log level cannot be parsed.
-func buildOptions(cfg *config.MnemonicConfig) ([]otelx.Option, error) {
-	logLevel, err := parseLogLevel(cfg.Logging.Level)
-	if err != nil {
-		return nil, err
+// buildConfig maps the application configuration onto an otelx.Config.
+// Returns an error if the log level is invalid or the trace exporter cannot be created.
+func buildConfig(ctx context.Context, cfg *config.MnemonicConfig) (otelx.Config, error) {
+	if _, err := zerolog.ParseLevel(cfg.Logging.Level); err != nil {
+		return otelx.Config{}, fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, err)
 	}
 
-	opts := []otelx.Option{
-		otelx.WithService(
-			"mnemonic",
-			version.Version(),
-			getEnvironment(),
-		),
-		otelx.WithLogLevel(logLevel),
+	otelCfg := otelx.Config{
+		ServiceName:    "mnemonic",
+		ServiceVersion: version.Version(),
+		Environment:    getEnvironment(),
+		LogLevel:       cfg.Logging.Level,
 	}
 
-	// Metrics configuration - otelx uses opt-in pattern
 	if cfg.Observability.Metrics.Enabled {
-		opts = append(opts, otelx.WithMetrics(cfg.Observability.Metrics.Port))
-		opts = append(opts, otelx.WithMetricsPath(cfg.Observability.Metrics.Path))
+		otelCfg.MetricsAddr = fmt.Sprintf(":%d", cfg.Observability.Metrics.Port)
+		otelCfg.MetricsPath = cfg.Observability.Metrics.Path
 	}
 
-	// Tracing configuration - otelx uses opt-in pattern
 	if cfg.Observability.Tracing.Enabled {
-		opts = append(opts, otelx.WithTracing())
-		opts = append(opts, otelx.WithTraceSampleRate(cfg.Observability.Tracing.SampleRate))
+		otelCfg.Tracing = true
+		otelCfg.Sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.Observability.Tracing.SampleRate))
+
+		// otelx v2 reads the OTLP endpoint from OTEL_EXPORTER_OTLP_* variables.
+		// Build the exporter here so the mnemonic config keeps working.
+		var opts []otlptracegrpc.Option
 		if cfg.Observability.Tracing.Endpoint != "" {
-			opts = append(opts, otelx.WithOTLPEndpoint(cfg.Observability.Tracing.Endpoint))
+			opts = append(opts, otlptracegrpc.WithEndpoint(cfg.Observability.Tracing.Endpoint))
 		}
 		if cfg.Observability.Tracing.OTLPInsecure {
-			opts = append(opts, otelx.WithOTLPInsecure())
+			opts = append(opts, otlptracegrpc.WithInsecure())
 		}
+		exporter, err := otlptracegrpc.New(ctx, opts...)
+		if err != nil {
+			return otelx.Config{}, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
+		}
+		otelCfg.TraceExporter = exporter
 	}
 
-	return opts, nil
-}
-
-// parseLogLevel converts a string log level to zerolog.Level.
-// Returns an error if the level string is invalid.
-func parseLogLevel(level string) (zerolog.Level, error) {
-	l, err := zerolog.ParseLevel(level)
-	if err != nil {
-		return zerolog.NoLevel, fmt.Errorf("invalid log level %q: %w", level, err)
-	}
-	return l, nil
+	return otelCfg, nil
 }
 
 // getEnvironment determines the environment from the MNEMONIC_ENV environment variable.

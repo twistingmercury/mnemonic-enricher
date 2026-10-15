@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twistingmercury/heartbeat"
+	"github.com/twistingmercury/heartbeat/v2"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 )
 
@@ -93,7 +93,7 @@ func TestCheckPostgreSQLHealth_NotInitialized(t *testing.T) {
 	t.Cleanup(health.ResetForTest)
 	health.ResetForTest()
 
-	result := health.CheckPostgreSQLHealthForTest()
+	result := health.CheckPostgreSQLHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "not initialized")
 }
@@ -107,10 +107,9 @@ func TestCheckPostgreSQLHealth_PingSuccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result := health.CheckPostgreSQLHealthForTest()
+	result := health.CheckPostgreSQLHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusOK, result.Status)
 	assert.Equal(t, "ok", result.Message)
-	assert.GreaterOrEqual(t, result.RequestDuration, float64(0))
 }
 
 func TestCheckPostgreSQLHealth_PingFailure(t *testing.T) {
@@ -122,7 +121,7 @@ func TestCheckPostgreSQLHealth_PingFailure(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result := health.CheckPostgreSQLHealthForTest()
+	result := health.CheckPostgreSQLHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "ping failed")
 	assert.Contains(t, result.Message, "connection refused")
@@ -132,7 +131,7 @@ func TestCheckNeo4jHealth_NotInitialized(t *testing.T) {
 	t.Cleanup(health.ResetForTest)
 	health.ResetForTest()
 
-	result := health.CheckNeo4jHealthForTest()
+	result := health.CheckNeo4jHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "not initialized")
 }
@@ -146,10 +145,9 @@ func TestCheckNeo4jHealth_VerifySuccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result := health.CheckNeo4jHealthForTest()
+	result := health.CheckNeo4jHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusOK, result.Status)
 	assert.Equal(t, "ok", result.Message)
-	assert.GreaterOrEqual(t, result.RequestDuration, float64(0))
 }
 
 func TestCheckNeo4jHealth_VerifyFailure(t *testing.T) {
@@ -161,22 +159,10 @@ func TestCheckNeo4jHealth_VerifyFailure(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result := health.CheckNeo4jHealthForTest()
+	result := health.CheckNeo4jHealthForTest(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "connectivity check failed")
 	assert.Contains(t, result.Message, "neo4j unreachable")
-}
-
-func TestCheckEmbeddingModel_ReturnsNotSet(t *testing.T) {
-	result := health.CheckEmbeddingModelForTest()
-	assert.Equal(t, heartbeat.StatusNotSet, result.Status)
-	assert.Contains(t, result.Message, "no ping endpoint available")
-}
-
-func TestCheckExtractionModel_ReturnsNotSet(t *testing.T) {
-	result := health.CheckExtractionModelForTest()
-	assert.Equal(t, heartbeat.StatusNotSet, result.Status)
-	assert.Contains(t, result.Message, "no ping endpoint available")
 }
 
 // --- CheckHealth integration tests ---

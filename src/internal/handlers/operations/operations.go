@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/twistingmercury/heartbeat"
+	"github.com/twistingmercury/heartbeat/v2"
 	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 )
 
@@ -12,7 +12,7 @@ import (
 // to the gin.Engine that is passed in. The deps slice is used to register
 // real dependency health checks with the heartbeat handler.
 func SetupHandlers(r *gin.Engine, deps []heartbeat.DependencyDescriptor) {
-	r.GET("/health", heartbeat.Handler("mnemonic", deps...))
+	r.GET("/health", gin.WrapH(heartbeat.Handler("mnemonic", deps...)))
 	r.GET("/version", GetVersion)
 }
 
