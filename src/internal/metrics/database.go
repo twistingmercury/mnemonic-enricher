@@ -10,34 +10,15 @@ import (
 )
 
 // Database holds instruments for database-related metrics.
-// It tracks connection pool statistics, query latency, and errors.
+// It tracks query latency and errors for Neo4j; PostgreSQL queries and pool
+// statistics are measured by otelpgx instead.
 type Database struct {
-	connectionPoolSize  metric.Int64Gauge
-	connectionPoolInUse metric.Int64Gauge
-	queryLatency        metric.Float64Histogram
-	queryErrors         metric.Int64Counter
+	queryLatency metric.Float64Histogram
+	queryErrors  metric.Int64Counter
 }
 
 // NewDatabase creates database metric instruments using the provided meter.
 func NewDatabase(meter metric.Meter) (*Database, error) {
-	connectionPoolSize, err := meter.Int64Gauge(
-		"mnemonic.db.connection_pool.size",
-		metric.WithDescription("Total size of the database connection pool"),
-		metric.WithUnit("{connection}"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("connection pool size gauge: %w", err)
-	}
-
-	connectionPoolInUse, err := meter.Int64Gauge(
-		"mnemonic.db.connection_pool.in_use",
-		metric.WithDescription("Number of connections currently in use"),
-		metric.WithUnit("{connection}"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("connection pool in-use gauge: %w", err)
-	}
-
 	queryLatency, err := meter.Float64Histogram(
 		"mnemonic.db.query_latency",
 		metric.WithDescription("Database query latency in milliseconds"),
@@ -58,21 +39,9 @@ func NewDatabase(meter metric.Meter) (*Database, error) {
 	}
 
 	return &Database{
-		connectionPoolSize:  connectionPoolSize,
-		connectionPoolInUse: connectionPoolInUse,
-		queryLatency:        queryLatency,
-		queryErrors:         queryErrors,
+		queryLatency: queryLatency,
+		queryErrors:  queryErrors,
 	}, nil
-}
-
-// RecordPoolStats records connection pool statistics for the specified database.
-// Call this periodically (e.g., every 30 seconds) to track pool health.
-// The database parameter should be a predefined database name (e.g., "postgres", "neo4j")
-// with bounded cardinality. Do not use user-provided or dynamic values.
-func (m *Database) RecordPoolStats(ctx context.Context, database string, size, inUse int64) {
-	attrs := metric.WithAttributes(attribute.String("database", database))
-	m.connectionPoolSize.Record(ctx, size, attrs)
-	m.connectionPoolInUse.Record(ctx, inUse, attrs)
 }
 
 // RecordQuery records a database query with its latency and operation type.
@@ -80,7 +49,7 @@ func (m *Database) RecordPoolStats(ctx context.Context, database string, size, i
 // Both database and operation should be predefined values with bounded cardinality.
 // Do not use user-provided or dynamic values to avoid metric explosion.
 func (m *Database) RecordQuery(ctx context.Context, database, operation string, duration time.Duration) {
-	m.queryLatency.Record(ctx, float64(duration.Milliseconds()), metric.WithAttributes(
+	m.queryLatency.Record(ctx, milliseconds(duration), metric.WithAttributes(
 		attribute.String("database", database),
 		attribute.String("operation", operation),
 	))
@@ -103,4 +72,10 @@ func (m *Database) RecordQueryWithError(ctx context.Context, database, operation
 	if err != nil {
 		m.RecordError(ctx, database, operation)
 	}
+}
+
+// milliseconds converts d to fractional milliseconds, so sub-millisecond
+// calls land in the lowest bucket instead of being truncated to zero.
+func milliseconds(d time.Duration) float64 {
+	return float64(d) / float64(time.Millisecond)
 }

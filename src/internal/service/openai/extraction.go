@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
@@ -60,7 +64,10 @@ type openaiExtraction struct {
 
 func newOpenAIExtraction(cfg config.OpenAIConfig, baseURL string) *openaiExtraction {
 	return &openaiExtraction{
-		client:     &http.Client{Timeout: 60 * time.Second},
+		client: &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		baseURL:    baseURL,
 		apiKey:     cfg.APIKey,
 		model:      cfg.ExtractionModel,
@@ -129,6 +136,10 @@ func (e *openaiExtraction) Extract(ctx context.Context, text string) ([]Concept,
 
 		// Sleep before retry, unless this was the last attempt.
 		if attempt < e.retries {
+			trace.SpanFromContext(ctx).AddEvent("openai.extract.retry", trace.WithAttributes(
+				attribute.Int("attempt", attempt+1),
+				attribute.String("error", err.Error()),
+			))
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("%w: %w", ErrExtractionFailed, ctx.Err())

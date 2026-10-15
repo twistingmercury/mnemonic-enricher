@@ -560,7 +560,7 @@ func TestProcessJob_Step1_LoadPatternFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -576,7 +576,7 @@ func TestProcessJob_Step4_ExtractionFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -594,7 +594,7 @@ func TestProcessJob_Step5_SyncPatternFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -613,7 +613,7 @@ func TestProcessJob_Step6_SyncConceptsFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -633,7 +633,7 @@ func TestProcessJob_Step7_ComputeRelatedToEdgesFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -658,6 +658,7 @@ func TestProcessJob_MarkCompletedFails(t *testing.T) {
 	err := svc.ProcessJob(context.Background(), testJob())
 
 	require.Error(t, err, "unrecoverable failure should return non-nil error")
+	require.NotErrorIs(t, err, enrichment.ErrJobFailed, "an unrecorded failure must not look recorded")
 	assert.Contains(t, err.Error(), "mark job completed")
 	assertExpectations(t, deps)
 }
@@ -682,6 +683,7 @@ func TestProcessJob_UpdateEnrichmentStatusAfterCompletionFails(t *testing.T) {
 	err := svc.ProcessJob(context.Background(), testJob())
 
 	require.Error(t, err, "unrecoverable failure should return non-nil error")
+	require.NotErrorIs(t, err, enrichment.ErrJobFailed, "an unrecorded failure must not look recorded")
 	assert.Contains(t, err.Error(), "update enrichment status")
 	assertExpectations(t, deps)
 }
@@ -803,7 +805,7 @@ func TestProcessJob_ChunkJob_Step1_LoadChunkFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -823,7 +825,7 @@ func TestProcessJob_ChunkJob_Step2_LoadPatternFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failChunkJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -844,7 +846,7 @@ func TestProcessJob_ChunkJob_Step3_EmbeddingFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failChunkJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -866,7 +868,7 @@ func TestProcessJob_ChunkJob_Step4_UpdateEmbeddingFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failChunkJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -889,7 +891,7 @@ func TestProcessJob_ChunkJob_Step5_UpdateChunkStatusFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failChunkJob succeeds")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 
@@ -943,7 +945,7 @@ func TestProcessJob_ChunkJob_GraphPipelineFails(t *testing.T) {
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
 
-	require.NoError(t, err, "pipeline failure should return nil when failJob records it successfully")
+	require.ErrorIs(t, err, enrichment.ErrJobFailed, "a recorded pipeline failure should return ErrJobFailed")
 	assertExpectations(t, deps)
 }
 

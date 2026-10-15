@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/twistingmercury/mnemonic-enricher/internal/queue"
 )
@@ -140,4 +141,19 @@ func TestAdapt_body(t *testing.T) {
 		Nack: func(bool) error { return nil },
 	}
 	assert.Equal(t, want, d.Body)
+}
+
+func TestAdapt_headers(t *testing.T) {
+	t.Parallel()
+	d := adapt(amqp.Delivery{
+		Body: []byte("body"),
+		Headers: amqp.Table{
+			"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+			"x-retries":   int32(3),
+		},
+	})
+	assert.Equal(t, []byte("body"), d.Body)
+	assert.Equal(t, map[string]string{
+		"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	}, d.Headers, "only string headers are kept")
 }

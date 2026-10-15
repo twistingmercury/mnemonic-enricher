@@ -23,39 +23,6 @@ func TestNewDatabase(t *testing.T) {
 	assert.NotNil(t, dm)
 }
 
-func TestDatabaseRecordPoolStats(t *testing.T) {
-	reader := sdkmetric.NewManualReader()
-	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	meter := provider.Meter("test")
-
-	dm, err := metrics.NewDatabase(meter)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	dm.RecordPoolStats(ctx, "postgres", 25, 10)
-	dm.RecordPoolStats(ctx, "neo4j", 50, 5)
-
-	var data metricdata.ResourceMetrics
-	err = reader.Collect(ctx, &data)
-	require.NoError(t, err)
-
-	assert.NotEmpty(t, data.ScopeMetrics)
-	foundPoolSize := false
-	foundPoolInUse := false
-	for _, sm := range data.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "mnemonic.db.connection_pool.size" {
-				foundPoolSize = true
-			}
-			if m.Name == "mnemonic.db.connection_pool.in_use" {
-				foundPoolInUse = true
-			}
-		}
-	}
-	assert.True(t, foundPoolSize, "pool size metric should be recorded")
-	assert.True(t, foundPoolInUse, "pool in use metric should be recorded")
-}
-
 func TestDatabaseRecordQuery(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
@@ -167,7 +134,6 @@ func TestDatabaseWithMultipleDatabases(t *testing.T) {
 	operations := []string{"select", "insert", "update", "delete"}
 
 	for _, db := range databases {
-		dm.RecordPoolStats(ctx, db, 25, 5)
 		for _, op := range operations {
 			dm.RecordQuery(ctx, db, op, 10*time.Millisecond)
 		}
@@ -178,4 +144,29 @@ func TestDatabaseWithMultipleDatabases(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, data.ScopeMetrics)
+}
+
+// TestDatabaseRecordQuery_SubMillisecond verifies that sub-millisecond
+// latencies are recorded as fractions rather than truncated to zero.
+func TestDatabaseRecordQuery_SubMillisecond(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	dm, err := metrics.NewDatabase(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("test"))
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	dm.RecordQuery(ctx, "neo4j", "select", 500*time.Microsecond)
+
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	for _, sm := range data.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "mnemonic.db.query_latency" {
+				hist := m.Data.(metricdata.Histogram[float64])
+				require.Len(t, hist.DataPoints, 1)
+				assert.InDelta(t, 0.5, hist.DataPoints[0].Sum, 1e-9)
+				return
+			}
+		}
+	}
+	t.Fatal("query latency metric not recorded")
 }

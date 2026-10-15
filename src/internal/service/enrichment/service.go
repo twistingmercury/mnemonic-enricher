@@ -26,10 +26,11 @@ import (
 	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 )
 
-// errPipelineFailed is a sentinel returned by runGraphPipeline when a pipeline
-// step fails but the failure was successfully recorded (via failJob). It signals
-// callers to stop processing and return nil to the worker.
-var errPipelineFailed = errors.New("pipeline step failed; failure recorded")
+// ErrJobFailed is returned by ProcessJob when a pipeline step failed and the
+// failure was recorded on the job (and chunk or pattern) for retry. The worker
+// acks the message; the returned error wraps the step's cause so the job's
+// span and metrics can report it.
+var ErrJobFailed = errors.New("enrichment job failed; failure recorded")
 
 // Service defines the worker-facing interface for processing enrichment jobs.
 // The enrichment worker goroutine calls these methods; REST/MCP handlers do not.
@@ -52,10 +53,10 @@ type Service interface {
 	//   7. Compute RELATED_TO edges
 	//   8. Mark job completed and pattern enriched
 	//
-	// On failure at any pipeline step, marks the job as failed with error detail.
-	// Returns nil when a step fails but the failure is recorded successfully.
-	// Returns a non-nil error only for unrecoverable system errors (e.g., failure
-	// to mark the job as failed or to update enrichment status).
+	// On failure at any pipeline step, marks the job as failed with error detail
+	// and returns an error wrapping ErrJobFailed and the cause. Any other non-nil
+	// error is unrecoverable (e.g., failure to mark the job as failed or to
+	// update enrichment status).
 	ProcessJob(ctx context.Context, job *enrichmentjob.Job) error
 
 	// ReclaimStaleJobs resets jobs stuck in processing state back to pending.
@@ -226,15 +227,8 @@ func (s *enrichmentService) processChunkJob(ctx context.Context, job *enrichment
 		// this job processed exists, so the count is >= 1.
 		//
 		// All chunks are enriched: run concept extraction + graph sync.
-		// runGraphPipeline returns errPipelineFailed when a step fails and
-		// the failure was recorded, or a real error when recording failed.
-		// In either failure case we must not call MarkCompleted.
+		// On failure (recorded or not) we must not call MarkCompleted.
 		if pipeErr := s.runGraphPipeline(ctx, job, pattern); pipeErr != nil {
-			if errors.Is(pipeErr, errPipelineFailed) {
-				// Failure was recorded successfully; return nil to the worker.
-				return nil
-			}
-			// Unrecoverable error recording the failure.
 			return pipeErr
 		}
 		// All graph steps succeeded; mark pattern enriched.
@@ -256,16 +250,11 @@ func (s *enrichmentService) processChunkJob(ctx context.Context, job *enrichment
 // avoids a redundant Postgres round-trip when the pattern was already fetched
 // earlier in the pipeline.
 //
-// On a pipeline step failure it calls failJob to record the failure and wraps
-// the result in errPipelineFailed (or returns the unrecoverable error directly).
-// Callers must check errors.Is(err, errPipelineFailed) to distinguish a
-// successfully-recorded failure from an unrecoverable recording error.
+// On a pipeline step failure it returns failJob's result: ErrJobFailed when
+// the failure was recorded, or the unrecoverable recording error.
 func (s *enrichmentService) runGraphPipeline(ctx context.Context, job *enrichmentjob.Job, pattern *patternrepo.Pattern) error {
 	recordFail := func(cause error) error {
-		if err := s.failJob(ctx, job, cause); err != nil {
-			return err // unrecoverable
-		}
-		return errPipelineFailed // recorded successfully
+		return s.failJob(ctx, job, cause)
 	}
 
 	// Extract concepts via OpenAI.
@@ -315,21 +304,13 @@ func (s *enrichmentService) processPatternJob(ctx context.Context, job *enrichme
 	// Step 1: Load pattern from Postgres.
 	pattern, err := s.patternRepo.Get(ctx, *job.PatternID)
 	if err != nil {
-		if failErr := s.failJob(ctx, job, fmt.Errorf("load pattern: %w", err)); failErr != nil {
-			return failErr
-		}
-		return nil
+		return s.failJob(ctx, job, fmt.Errorf("load pattern: %w", err))
 	}
 
 	// Steps 2-3: Per-chunk embedding pipeline replaces pattern-level embedding (Task 6).
 
 	// Steps 4-8: Extract concepts and sync graph.
 	if err := s.runGraphPipeline(ctx, job, pattern); err != nil {
-		if errors.Is(err, errPipelineFailed) {
-			// Failure recorded successfully; return nil to the worker.
-			return nil
-		}
-		// Unrecoverable error recording the pipeline failure.
 		return err
 	}
 
@@ -363,12 +344,15 @@ func (s *enrichmentService) failChunkJob(ctx context.Context, job *enrichmentjob
 			Str("pattern_id", patternID.String()).
 			Msg("failed to update pattern enrichment status")
 	}
-	return s.jobRepo.MarkFailed(ctx, job.ID, cause, s.cfg.RetryDelay)
+	if err := s.jobRepo.MarkFailed(ctx, job.ID, cause, s.cfg.RetryDelay); err != nil {
+		return fmt.Errorf("mark job failed: %w (original cause: %v)", err, cause)
+	}
+	return fmt.Errorf("%w: %w", ErrJobFailed, cause)
 }
 
 // failJob marks the job as failed and updates the pattern enrichment status.
-// Returns nil on success (the failure is recorded). Returns an error only when
-// the failure itself cannot be recorded (unrecoverable).
+// It returns an error wrapping ErrJobFailed and cause when the failure is
+// recorded, or the recording error when it cannot be (unrecoverable).
 func (s *enrichmentService) failJob(ctx context.Context, job *enrichmentjob.Job, cause error) error {
 	if err := s.jobRepo.MarkFailed(ctx, job.ID, cause, s.cfg.RetryDelay); err != nil {
 		s.logger.Error().
@@ -389,7 +373,7 @@ func (s *enrichmentService) failJob(ctx context.Context, job *enrichmentjob.Job,
 		}
 	}
 
-	return nil
+	return fmt.Errorf("%w: %w", ErrJobFailed, cause)
 }
 
 // ReclaimStaleJobs resets jobs stuck in processing state back to pending.
