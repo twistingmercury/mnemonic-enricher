@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the service and E2E suite modules to Go 1.27.2 and pinned the build and E2E runner images to `golang-tooling:go1.27.2`
+- Upgraded `golang.org/x/net` to v0.60.0 to clear five govulncheck findings in v0.59.0
+
 ## [0.3.2] - 2026-09-09
 
 ### Changed

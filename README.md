@@ -80,7 +80,7 @@ interface.
 
 ### Quick Start
 
-Requirements are Go 1.27.1 or newer, Docker with the Compose plugin for container
+Requirements are Go 1.27.2 or newer, Docker with the Compose plugin for container
 builds and end-to-end tests, accessible PostgreSQL, Neo4j, and RabbitMQ instances
 with the Mnemonic schema, and an OpenAI API key for live enrichment.
 
