@@ -54,8 +54,10 @@ func TestHealthCheck_AllHealthyReturns200(t *testing.T) {
 		t.Fatalf("expected 'status' field to be a string, got %T", body["status"])
 	}
 
-	if status != "OK" {
-		t.Fatalf("expected status to be 'OK', got %q", status)
+	// OpenAI checks report Warning (still HTTP 200) when the API is unreachable
+	// or the key is not valid, as with a test key.
+	if status != "OK" && status != "Warning" {
+		t.Fatalf("expected status to be 'OK' or 'Warning', got %q", status)
 	}
 
 	// Verify name field is "mnemonic"
@@ -84,8 +86,8 @@ func TestHealthCheck_NoAuthRequired(t *testing.T) {
 }
 
 // TestHealthCheck_ResponseContainsAllComponents verifies the dependencies array
-// in the response contains entries for PostgreSQL and Neo4j, the dependencies
-// registered via the health package.
+// in the response contains an entry for every dependency registered via the
+// health package.
 func TestHealthCheck_ResponseContainsAllComponents(t *testing.T) {
 	client := helpers.NewTestClient(t)
 
@@ -109,10 +111,11 @@ func TestHealthCheck_ResponseContainsAllComponents(t *testing.T) {
 		t.Fatalf("expected 'dependencies' to be an array, got %T", depsRaw)
 	}
 
-	// The health package registers 2 dependency descriptors.
 	expectedNames := map[string]bool{
-		"PostgreSQL": false,
-		"Neo4j":      false,
+		"PostgreSQL":              false,
+		"Neo4j":                   false,
+		"OpenAI embedding model":  false,
+		"OpenAI extraction model": false,
 	}
 
 	for _, d := range deps {

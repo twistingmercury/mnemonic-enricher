@@ -4,13 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/twistingmercury/heartbeat/v2"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
 // checkTimeout is the per-check timeout used when probing dependencies.
 const checkTimeout = 3 * time.Second
+
+// defaultOpenAIBaseURL is the OpenAI API root used when none is configured.
+// It is a variable so unit tests can keep checks off the network.
+var defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 // Pinger is satisfied by *pgxpool.Pool and any type that supports Ping.
 type Pinger interface {
@@ -27,6 +36,7 @@ type ConnectivityVerifier interface {
 type Dependencies struct {
 	PGPool      Pinger
 	Neo4jDriver ConnectivityVerifier
+	OpenAI      config.OpenAIConfig
 }
 
 var (
@@ -47,6 +57,11 @@ func Initialize(deps Dependencies) error {
 
 	healthDeps = &deps
 
+	openAIBaseURL := defaultOpenAIBaseURL
+	if deps.OpenAI.BaseURL != "" {
+		openAIBaseURL = strings.TrimRight(deps.OpenAI.BaseURL, "/")
+	}
+
 	descriptors = []heartbeat.DependencyDescriptor{
 		{
 			Name:      "PostgreSQL",
@@ -60,6 +75,18 @@ func Initialize(deps Dependencies) error {
 			Timeout:   checkTimeout,
 			CheckFunc: checkNeo4jHealth,
 		},
+		{
+			Name:      "OpenAI embedding model",
+			Type:      "external_api",
+			Timeout:   checkTimeout,
+			CheckFunc: openAIModelCheck(openAIBaseURL, deps.OpenAI.APIKey, deps.OpenAI.EmbeddingModel),
+		},
+		{
+			Name:      "OpenAI extraction model",
+			Type:      "external_api",
+			Timeout:   checkTimeout,
+			CheckFunc: openAIModelCheck(openAIBaseURL, deps.OpenAI.APIKey, deps.OpenAI.ExtractionModel),
+		},
 	}
 
 	return nil
@@ -72,7 +99,8 @@ func Descriptors() []heartbeat.DependencyDescriptor {
 }
 
 // CheckHealth runs all dependency checks and returns a joined error for any
-// that are not healthy. This is intended for CLI health probes.
+// that are Critical. Warnings, such as OpenAI being unreachable, do not fail
+// the probe. This is intended for CLI health probes.
 func CheckHealth() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -80,7 +108,7 @@ func CheckHealth() error {
 
 	var errs error
 	for _, ds := range depResults {
-		if ds.Status != heartbeat.StatusOK {
+		if ds.Status == heartbeat.StatusCritical {
 			err := fmt.Errorf("failed to verify health for %s: %s", ds.Resource, ds.Message)
 			errs = errors.Join(errs, err)
 		}
@@ -127,4 +155,48 @@ func checkNeo4jHealth(ctx context.Context) (status heartbeat.StatusResult) {
 	status.Status = heartbeat.StatusOK
 	status.Message = "ok"
 	return status
+}
+
+// openAIModelCheck returns a check that retrieves model from the OpenAI models
+// endpoint. The call is free and confirms that the API is reachable, the key
+// is valid and the key can use the model. Failures are reported as Warning so
+// an OpenAI outage shows in /health without failing the probe.
+func openAIModelCheck(baseURL, apiKey, model string) heartbeat.CheckFunc {
+	modelURL := baseURL + "/models/" + url.PathEscape(model)
+
+	return func(ctx context.Context) (status heartbeat.StatusResult) {
+		status.Resource = model
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelURL, nil)
+		if err != nil {
+			status.Status = heartbeat.StatusWarning
+			status.Message = "invalid OpenAI base URL"
+			return status
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			// The error can carry internal addresses, so it is not echoed.
+			status.Status = heartbeat.StatusWarning
+			status.Message = "request failed"
+			if ctx.Err() != nil {
+				status.Message = "request timed out"
+			}
+			return status
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+
+		status.StatusCode = resp.StatusCode
+		if resp.StatusCode != http.StatusOK {
+			status.Status = heartbeat.StatusWarning
+			status.Message = fmt.Sprintf("models endpoint returned %s", resp.Status)
+			return status
+		}
+
+		status.Status = heartbeat.StatusOK
+		status.Message = "ok"
+		return status
+	}
 }

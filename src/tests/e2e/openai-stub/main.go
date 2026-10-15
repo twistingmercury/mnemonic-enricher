@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -106,6 +107,24 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleModel answers the health check's model lookup (GET /v1/models/{model}).
+func handleModel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	if !requireAuth(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"id":     strings.TrimPrefix(r.URL.Path, "/v1/models/"),
+		"object": "model",
+	}); err != nil {
+		log.Printf("model encode error: %v", err)
+	}
+}
+
 func handleFailNext(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.NotFound(w, r)
@@ -119,6 +138,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/embeddings", handleEmbeddings)
 	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
+	mux.HandleFunc("/v1/models/", handleModel)
 	mux.HandleFunc("/control/fail-next", handleFailNext)
 
 	log.Println("OpenAI stub listening on :8090")

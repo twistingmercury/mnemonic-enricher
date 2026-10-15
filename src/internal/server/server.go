@@ -70,6 +70,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	if err := health.Initialize(health.Dependencies{
 		PGPool:      pgPool,
 		Neo4jDriver: neo4jDriver,
+		OpenAI:      cfg.OpenAI,
 	}); err != nil {
 		return fmt.Errorf("failed to initialize health checks: %w", err)
 	}
