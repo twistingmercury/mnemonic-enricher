@@ -26,8 +26,8 @@ tests-unit: ## Run the unit tests
 tests-bench: ## Run benchmark tests
 	cd src && go test ./... -bench=. -benchmem -run=^$$
 
-tests-db-graph: ## Run graph repository integration tests
-	src/internal/repository/tests/run-graph-integration-tests.sh
+tests-db-graph: ## Run graph repository integration tests against NEO4J_URI (default bolt://localhost:7688)
+	cd src && go test -tags integration ./internal/repository/graph/...
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable targets:\n"} /^[a-zA-Z0-9_-]+:.*##/ { printf "  %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)

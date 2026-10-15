@@ -26,21 +26,17 @@ import (
 // ---------------------------------------------------------------------------
 
 // concurrentService is a hand-written mock for tests that need dynamic return
-// values. GetJob and ProcessJob are set via function fields.
+// values. StartJob and ProcessJob are set via function fields.
 type concurrentService struct {
-	getJobFunc  func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
-	processFunc func(ctx context.Context, job *enrichmentjob.Job) error
+	startJobFunc func(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error)
+	processFunc  func(ctx context.Context, job *enrichmentjob.Job) error
 }
 
-func (s *concurrentService) GetJob(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
-	if s.getJobFunc != nil {
-		return s.getJobFunc(ctx, id)
+func (s *concurrentService) StartJob(ctx context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+	if s.startJobFunc != nil {
+		return s.startJobFunc(ctx, id)
 	}
 	return nil, nil
-}
-
-func (s *concurrentService) MarkJobProcessing(_ context.Context, _ uuid.UUID) error {
-	return nil
 }
 
 func (s *concurrentService) ProcessJob(ctx context.Context, job *enrichmentjob.Job) error {
@@ -67,14 +63,10 @@ type mockService struct {
 	mock.Mock
 }
 
-func (m *mockService) GetJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
+func (m *mockService) StartJob(ctx context.Context, jobID uuid.UUID) (*enrichmentjob.Job, error) {
 	args := m.Called(ctx, jobID)
 	job, _ := args.Get(0).(*enrichmentjob.Job)
 	return job, args.Error(1)
-}
-
-func (m *mockService) MarkJobProcessing(ctx context.Context, jobID uuid.UUID) error {
-	return m.Called(ctx, jobID).Error(0)
 }
 
 func (m *mockService) ProcessJob(ctx context.Context, job *enrichmentjob.Job) error {
@@ -151,7 +143,6 @@ func (s *mockSubscriber) Close() error {
 func testConfig(workerCount int) config.EnrichmentConfig {
 	return config.EnrichmentConfig{
 		WorkerCount:            workerCount,
-		MaxAttempts:            3,
 		RetryDelay:             10 * time.Millisecond,
 		JobTimeout:             1 * time.Second,
 		DrainTimeout:           500 * time.Millisecond,
@@ -172,8 +163,6 @@ func newTestJob() *enrichmentjob.Job {
 	return &enrichmentjob.Job{
 		ID:        uuid.New(),
 		PatternID: &pid,
-		Status:    enrichmentjob.StatusProcessing,
-		Attempts:  1,
 	}
 }
 
@@ -184,8 +173,6 @@ func newPatternOnlyJob() *enrichmentjob.Job {
 		ID:        uuid.New(),
 		PatternID: &pid,
 		ChunkID:   nil,
-		Status:    enrichmentjob.StatusProcessing,
-		Attempts:  1,
 	}
 }
 
@@ -196,8 +183,6 @@ func newChunkOnlyJob() *enrichmentjob.Job {
 		ID:        uuid.New(),
 		PatternID: nil,
 		ChunkID:   &cid,
-		Status:    enrichmentjob.StatusProcessing,
-		Attempts:  1,
 	}
 }
 
@@ -209,8 +194,6 @@ func newBothIDsJob() *enrichmentjob.Job {
 		ID:        uuid.New(),
 		PatternID: &pid,
 		ChunkID:   &cid,
-		Status:    enrichmentjob.StatusProcessing,
-		Attempts:  1,
 	}
 }
 
@@ -242,8 +225,7 @@ func TestWorkerProcessesAvailableJobs(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(nil)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -266,14 +248,14 @@ func TestWorkerProcessesAvailableJobs(t *testing.T) {
 	svc.AssertCalled(t, "ProcessJob", mock.Anything, job)
 }
 
-func TestWorkerNacksOnGetJobFailure(t *testing.T) {
+func TestWorkerNacksOnStartJobFailure(t *testing.T) {
 	t.Parallel()
 
 	job := newTestJob()
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(nil, errors.New("db error"))
+	svc.On("StartJob", mock.Anything, job.ID).Return(nil, errors.New("db error"))
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -290,37 +272,9 @@ func TestWorkerNacksOnGetJobFailure(t *testing.T) {
 
 	err := w.Run(ctx)
 	assert.NoError(t, err)
-	assert.False(t, ackCalled.Load(), "delivery should not be acked when GetJob fails")
-	assert.True(t, nackCalled.Load(), "delivery should be nacked when GetJob fails")
-}
-
-func TestWorkerNacksOnMarkJobProcessingFailure(t *testing.T) {
-	t.Parallel()
-
-	job := newTestJob()
-	var ackCalled, nackCalled atomic.Bool
-
-	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(errors.New("state error"))
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-
-	sub := &mockSubscriber{
-		name:       "test-queue",
-		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
-	}
-
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	err := w.Run(ctx)
-	assert.NoError(t, err)
-	assert.False(t, ackCalled.Load(), "delivery should not be acked when MarkJobProcessing fails")
-	assert.True(t, nackCalled.Load(), "delivery should be nacked when MarkJobProcessing fails")
+	assert.False(t, ackCalled.Load(), "delivery should not be acked when StartJob fails")
+	assert.True(t, nackCalled.Load(), "delivery should be nacked when StartJob fails")
+	svc.AssertNotCalled(t, "ProcessJob", mock.Anything, mock.Anything)
 }
 
 func TestWorkerNacksOnProcessJobFailure(t *testing.T) {
@@ -330,8 +284,7 @@ func TestWorkerNacksOnProcessJobFailure(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(errors.New("pipeline error"))
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -430,7 +383,7 @@ func TestMultipleWorkersConcurrency(t *testing.T) {
 	var processedCount atomic.Int32
 
 	svc := &concurrentService{
-		getJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+		startJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
 			for _, j := range jobs {
 				if j.ID == id {
 					return j, nil
@@ -508,7 +461,7 @@ func TestGracefulDrainWaitsForInflightJobs(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := &concurrentService{
-		getJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
+		startJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
 			return job, nil
 		},
 		processFunc: func(ctx context.Context, _ *enrichmentjob.Job) error {
@@ -571,7 +524,7 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := &concurrentService{
-		getJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
+		startJobFunc: func(_ context.Context, _ uuid.UUID) (*enrichmentjob.Job, error) {
 			return job, nil
 		},
 		processFunc: func(ctx context.Context, _ *enrichmentjob.Job) error {
@@ -643,7 +596,7 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	}
 
 	svc := &concurrentService{
-		getJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
+		startJobFunc: func(_ context.Context, id uuid.UUID) (*enrichmentjob.Job, error) {
 			for _, j := range jobs {
 				if j.ID == id {
 					return j, nil
@@ -709,8 +662,7 @@ func TestRunWorkerPatternOnlyJobNoPanic(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(nil)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -742,8 +694,7 @@ func TestRunWorkerChunkOnlyJobNoPanic(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(nil)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
@@ -775,8 +726,7 @@ func TestRunWorkerBothIDsJobNoPanic(t *testing.T) {
 	var ackCalled, nackCalled atomic.Bool
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(nil)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()

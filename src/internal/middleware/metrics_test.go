@@ -33,7 +33,7 @@ func TestRequestMetricsMiddleware(t *testing.T) {
 	require.NoError(t, err)
 
 	router := gin.New()
-	router.Use(rm.Middleware())
+	router.Use(rm.MiddlewareWithSkipPaths(nil))
 	router.GET("/test", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
@@ -62,7 +62,7 @@ func TestRequestMetricsMiddlewareRecordsStatusCode(t *testing.T) {
 	require.NoError(t, err)
 
 	router := gin.New()
-	router.Use(rm.Middleware())
+	router.Use(rm.MiddlewareWithSkipPaths(nil))
 	router.GET("/success", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
@@ -166,7 +166,7 @@ func TestRequestMetricsRecordsHTTPMethod(t *testing.T) {
 	require.NoError(t, err)
 
 	router := gin.New()
-	router.Use(rm.Middleware())
+	router.Use(rm.MiddlewareWithSkipPaths(nil))
 	router.POST("/test", func(c *gin.Context) {
 		c.Status(http.StatusCreated)
 	})

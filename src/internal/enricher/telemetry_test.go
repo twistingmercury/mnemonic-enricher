@@ -33,8 +33,7 @@ func runOne(t *testing.T, d queue.Delivery, processErr error) metricdata.Resourc
 	d.Body = []byte(fmt.Sprintf(`{"job_id":%q}`, job.ID))
 
 	svc := new(mockService)
-	svc.On("GetJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("MarkJobProcessing", mock.Anything, job.ID).Return(nil)
+	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
 	svc.On("ProcessJob", mock.Anything, job).Return(processErr)
 	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
 	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()

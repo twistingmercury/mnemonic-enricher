@@ -140,11 +140,10 @@ func (w *Worker) Run(ctx context.Context) error {
 	return nil
 }
 
-// handleDelivery unmarshals a queue delivery, looks up the job, marks it as
-// processing, and runs the enrichment pipeline. It calls d.Ack when the
-// pipeline ran (successfully or with a recorded failure) and d.Nack(false) on
-// unrecoverable errors (parse failures, lookup failures, state-transition
-// failures, unrecorded pipeline failures). drainCtx remains live through the
+// handleDelivery unmarshals a queue delivery, starts the job, and runs the
+// enrichment pipeline. It calls d.Ack when the pipeline ran (successfully or
+// with a recorded failure) and d.Nack(false) on unrecoverable errors (parse
+// failures, start failures, unrecorded pipeline failures). drainCtx remains live through the
 // drain phase so that in-flight work can complete gracefully after the main
 // ctx is cancelled.
 //
@@ -194,23 +193,13 @@ func (w *Worker) handleDelivery(drainCtx context.Context, d queue.Delivery) {
 	span.SetAttributes(attribute.String("mnemonic.job_id", jobID.String()))
 	log = log.With().Str("job_id", jobID.String()).Logger()
 
-	// Look up the job.
-	job, err := w.svc.GetJob(ctx, jobID)
+	// Mark the job as processing and load what it targets.
+	job, err := w.svc.StartJob(ctx, jobID)
 	if err != nil {
 		spanErr = err
-		log.Error().Err(err).Msg("failed to get job; nacking")
+		log.Error().Err(err).Msg("failed to start job; nacking")
 		if nackErr := d.Nack(false); nackErr != nil {
-			log.Error().Err(nackErr).Msg("nack failed after GetJob error")
-		}
-		return
-	}
-
-	// Mark the job as processing.
-	if err := w.svc.MarkJobProcessing(ctx, jobID); err != nil {
-		spanErr = err
-		log.Error().Err(err).Msg("failed to mark job processing; nacking")
-		if nackErr := d.Nack(false); nackErr != nil {
-			log.Error().Err(nackErr).Msg("nack failed after MarkJobProcessing error")
+			log.Error().Err(nackErr).Msg("nack failed after StartJob error")
 		}
 		return
 	}

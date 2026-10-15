@@ -14,30 +14,12 @@ import (
 // MnemonicConfig is the top-level configuration structure for the Mnemonic server.
 type MnemonicConfig struct {
 	Server        ServerConfig        `mapstructure:"server"`
-	MCP           MCPConfig           `mapstructure:"mcp"`
 	Database      DatabaseConfig      `mapstructure:"database"`
 	OpenAI        OpenAIConfig        `mapstructure:"openai"`
-	RateLimit     RateLimitConfig     `mapstructure:"rate_limit"`
 	Enrichment    EnrichmentConfig    `mapstructure:"enrichment"`
 	Queue         QueueConfig         `mapstructure:"queue"`
 	Logging       LoggingConfig       `mapstructure:"logging"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
-	Vocabulary    VocabularyConfig    `mapstructure:"vocabulary"`
-}
-
-// VocabularyConfig holds the allowed values for pattern language and domain fields.
-type VocabularyConfig struct {
-	Languages []string `mapstructure:"languages"`
-	Domains   []string `mapstructure:"domains"`
-}
-
-// MCPConfig contains MCP server settings.
-type MCPConfig struct {
-	Port                   int           `mapstructure:"port"`
-	ReadTimeout            time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout           time.Duration `mapstructure:"write_timeout"`
-	IdleTimeout            time.Duration `mapstructure:"idle_timeout"`
-	DefaultSearchThreshold float64       `mapstructure:"default_search_threshold"`
 }
 
 // ServerConfig contains HTTP server settings.
@@ -89,34 +71,18 @@ type Neo4jConfig struct {
 
 // OpenAIConfig contains OpenAI API settings.
 type OpenAIConfig struct {
-	APIKey               string        `mapstructure:"api_key"` // #nosec G117 -- credentials loaded from config/env, not serialized
-	BaseURL              string        `mapstructure:"base_url"`
-	EmbeddingModel       string        `mapstructure:"embedding_model"`
-	EmbeddingDimensions  int           `mapstructure:"embedding_dimensions"`
-	ExtractionModel      string        `mapstructure:"extraction_model"`
-	MaxRequestsPerMinute int           `mapstructure:"max_requests_per_minute"`
-	RetryAttempts        int           `mapstructure:"retry_attempts"`
-	RetryDelay           time.Duration `mapstructure:"retry_delay"`
-}
-
-// RateLimitConfig contains rate limiting settings.
-type RateLimitConfig struct {
-	Enabled           bool             `mapstructure:"enabled"`
-	RequestsPerSecond int              `mapstructure:"requests_per_second"`
-	BurstSize         int              `mapstructure:"burst_size"`
-	PerUser           PerUserRateLimit `mapstructure:"per_user"`
-}
-
-// PerUserRateLimit contains per-user rate limiting settings.
-type PerUserRateLimit struct {
-	RequestsPerMinute int `mapstructure:"requests_per_minute"`
-	BurstSize         int `mapstructure:"burst_size"`
+	APIKey              string        `mapstructure:"api_key"` // #nosec G117 -- credentials loaded from config/env, not serialized
+	BaseURL             string        `mapstructure:"base_url"`
+	EmbeddingModel      string        `mapstructure:"embedding_model"`
+	EmbeddingDimensions int           `mapstructure:"embedding_dimensions"`
+	ExtractionModel     string        `mapstructure:"extraction_model"`
+	RetryAttempts       int           `mapstructure:"retry_attempts"`
+	RetryDelay          time.Duration `mapstructure:"retry_delay"`
 }
 
 // EnrichmentConfig contains enrichment worker settings.
 type EnrichmentConfig struct {
 	WorkerCount            int           `mapstructure:"worker_count"`
-	MaxAttempts            int           `mapstructure:"max_attempts"`
 	RetryDelay             time.Duration `mapstructure:"retry_delay"`
 	JobTimeout             time.Duration `mapstructure:"job_timeout"`
 	DrainTimeout           time.Duration `mapstructure:"drain_timeout"`
@@ -145,15 +111,12 @@ type RabbitMQConfig struct {
 
 // LoggingConfig contains logging settings.
 type LoggingConfig struct {
-	Level         string `mapstructure:"level"`
-	Format        string `mapstructure:"format"`
-	IncludeCaller bool   `mapstructure:"include_caller"`
+	Level string `mapstructure:"level"`
 }
 
 // ObservabilityConfig contains observability settings.
 type ObservabilityConfig struct {
 	Metrics MetricsConfig `mapstructure:"metrics"`
-	Health  HealthConfig  `mapstructure:"health"`
 	Tracing TracingConfig `mapstructure:"tracing"`
 }
 
@@ -162,12 +125,6 @@ type MetricsConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
 	Path    string `mapstructure:"path"`
 	Port    int    `mapstructure:"port"`
-}
-
-// HealthConfig contains health check settings.
-type HealthConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Path    string `mapstructure:"path"`
 }
 
 // TracingConfig contains distributed tracing settings.
@@ -257,21 +214,6 @@ func LoadWithFlags(flags *pflag.FlagSet) (*MnemonicConfig, error) {
 	return cfg, nil
 }
 
-// LoadFromViper loads configuration from an already-configured viper instance.
-// This is primarily useful for testing.
-func LoadFromViper(v *viper.Viper) (*MnemonicConfig, error) {
-	cfg := &MnemonicConfig{}
-	if err := v.Unmarshal(cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	if errs := cfg.Validate(); len(errs) > 0 {
-		return nil, errs
-	}
-
-	return cfg, nil
-}
-
 // SetDefaults sets all default values in the viper instance.
 // This function is exported to allow tests to use the same defaults as production code.
 func SetDefaults(v *viper.Viper) {
@@ -285,13 +227,6 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("server.tls.enabled", DefaultServerTLSEnabled)
 	v.SetDefault("server.tls.cert_file", "")
 	v.SetDefault("server.tls.key_file", "")
-
-	// MCP server defaults
-	v.SetDefault("mcp.port", DefaultMCPPort)
-	v.SetDefault("mcp.read_timeout", DefaultMCPReadTimeout)
-	v.SetDefault("mcp.write_timeout", DefaultMCPWriteTimeout)
-	v.SetDefault("mcp.idle_timeout", DefaultMCPIdleTimeout)
-	v.SetDefault("mcp.default_search_threshold", DefaultMCPDefaultSearchThreshold)
 
 	// PostgreSQL defaults
 	v.SetDefault("database.postgres.host", DefaultPostgresHost)
@@ -317,21 +252,12 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("openai.embedding_model", DefaultOpenAIEmbeddingModel)
 	v.SetDefault("openai.embedding_dimensions", DefaultOpenAIEmbeddingDimensions)
 	v.SetDefault("openai.extraction_model", DefaultOpenAIExtractionModel)
-	v.SetDefault("openai.max_requests_per_minute", DefaultOpenAIMaxRequestsPerMinute)
 	v.SetDefault("openai.retry_attempts", DefaultOpenAIRetryAttempts)
 	v.SetDefault("openai.retry_delay", DefaultOpenAIRetryDelay)
 	v.SetDefault("openai.base_url", DefaultOpenAIBaseURL)
 
-	// Rate limit defaults
-	v.SetDefault("rate_limit.enabled", DefaultRateLimitEnabled)
-	v.SetDefault("rate_limit.requests_per_second", DefaultRateLimitRequestsPerSecond)
-	v.SetDefault("rate_limit.burst_size", DefaultRateLimitBurstSize)
-	v.SetDefault("rate_limit.per_user.requests_per_minute", DefaultRateLimitPerUserRPM)
-	v.SetDefault("rate_limit.per_user.burst_size", DefaultRateLimitPerUserBurst)
-
 	// Enrichment defaults
 	v.SetDefault("enrichment.worker_count", DefaultEnrichmentWorkerCount)
-	v.SetDefault("enrichment.max_attempts", DefaultEnrichmentMaxAttempts)
 	v.SetDefault("enrichment.retry_delay", DefaultEnrichmentRetryDelay)
 	v.SetDefault("enrichment.job_timeout", DefaultEnrichmentJobTimeout)
 	v.SetDefault("enrichment.drain_timeout", DefaultEnrichmentDrainTimeout)
@@ -352,19 +278,11 @@ func SetDefaults(v *viper.Viper) {
 
 	// Logging defaults
 	v.SetDefault("logging.level", DefaultLoggingLevel)
-	v.SetDefault("logging.format", DefaultLoggingFormat)
-	v.SetDefault("logging.include_caller", DefaultLoggingIncludeCaller)
-
-	// Vocabulary defaults
-	v.SetDefault("vocabulary.languages", DefaultVocabularyLanguages())
-	v.SetDefault("vocabulary.domains", DefaultVocabularyDomains())
 
 	// Observability defaults
 	v.SetDefault("observability.metrics.enabled", DefaultMetricsEnabled)
 	v.SetDefault("observability.metrics.path", DefaultMetricsPath)
 	v.SetDefault("observability.metrics.port", DefaultMetricsPort)
-	v.SetDefault("observability.health.enabled", DefaultHealthEnabled)
-	v.SetDefault("observability.health.path", DefaultHealthPath)
 	v.SetDefault("observability.tracing.enabled", DefaultTracingEnabled)
 	v.SetDefault("observability.tracing.endpoint", "")
 	v.SetDefault("observability.tracing.sample_rate", DefaultTracingSampleRate)
@@ -422,17 +340,11 @@ func (c *MnemonicConfig) Validate() ValidationErrors {
 	// Server validation
 	errs = append(errs, c.Server.validate()...)
 
-	// MCP validation
-	errs = append(errs, c.MCP.validate()...)
-
 	// Database validation
 	errs = append(errs, c.Database.validate()...)
 
 	// OpenAI validation
 	errs = append(errs, c.OpenAI.validate()...)
-
-	// Rate limit validation
-	errs = append(errs, c.RateLimit.validate()...)
 
 	// Enrichment validation
 	errs = append(errs, c.Enrichment.validate()...)
@@ -443,19 +355,10 @@ func (c *MnemonicConfig) Validate() ValidationErrors {
 	// Observability validation
 	errs = append(errs, c.Observability.validate()...)
 
-	// Vocabulary validation
-	errs = append(errs, c.Vocabulary.validate()...)
-
 	// Cross-configuration validation
 	if c.Observability.Metrics.Enabled && c.Server.Port == c.Observability.Metrics.Port {
 		errs = append(errs, ValidationError{
 			Field:   "observability.metrics.port",
-			Message: fmt.Sprintf("must be different from server.port (%d) to avoid port conflict", c.Server.Port),
-		})
-	}
-	if c.Server.Port == c.MCP.Port {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.port",
 			Message: fmt.Sprintf("must be different from server.port (%d) to avoid port conflict", c.Server.Port),
 		})
 	}
@@ -525,47 +428,6 @@ func (c *ServerConfig) validate() ValidationErrors {
 				Message: fmt.Sprintf("cannot access file: %v", err),
 			})
 		}
-	}
-
-	return errs
-}
-
-func (c *MCPConfig) validate() ValidationErrors {
-	var errs ValidationErrors
-
-	if c.Port < 1 || c.Port > 65535 {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.port",
-			Message: fmt.Sprintf("must be between 1 and 65535, got %d", c.Port),
-		})
-	}
-
-	if c.ReadTimeout <= 0 {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.read_timeout",
-			Message: "must be a positive duration",
-		})
-	}
-
-	if c.WriteTimeout <= 0 {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.write_timeout",
-			Message: "must be a positive duration",
-		})
-	}
-
-	if c.IdleTimeout <= 0 {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.idle_timeout",
-			Message: "must be a positive duration",
-		})
-	}
-
-	if c.DefaultSearchThreshold < 0 || c.DefaultSearchThreshold > 1 {
-		errs = append(errs, ValidationError{
-			Field:   "mcp.default_search_threshold",
-			Message: fmt.Sprintf("must be between 0.0 and 1.0, got %f", c.DefaultSearchThreshold),
-		})
 	}
 
 	return errs
@@ -667,13 +529,6 @@ func (c *OpenAIConfig) validate() ValidationErrors {
 		})
 	}
 
-	if c.MaxRequestsPerMinute < 1 {
-		errs = append(errs, ValidationError{
-			Field:   "openai.max_requests_per_minute",
-			Message: "must be at least 1",
-		})
-	}
-
 	if c.RetryAttempts < 0 {
 		errs = append(errs, ValidationError{
 			Field:   "openai.retry_attempts",
@@ -701,55 +556,12 @@ func (c *OpenAIConfig) validate() ValidationErrors {
 	return errs
 }
 
-func (c *RateLimitConfig) validate() ValidationErrors {
-	var errs ValidationErrors
-
-	if c.Enabled {
-		if c.RequestsPerSecond < 1 {
-			errs = append(errs, ValidationError{
-				Field:   "rate_limit.requests_per_second",
-				Message: "must be at least 1 when rate limiting is enabled",
-			})
-		}
-
-		if c.BurstSize < 1 {
-			errs = append(errs, ValidationError{
-				Field:   "rate_limit.burst_size",
-				Message: "must be at least 1 when rate limiting is enabled",
-			})
-		}
-
-		if c.PerUser.RequestsPerMinute < 1 {
-			errs = append(errs, ValidationError{
-				Field:   "rate_limit.per_user.requests_per_minute",
-				Message: "must be at least 1 when rate limiting is enabled",
-			})
-		}
-
-		if c.PerUser.BurstSize < 1 {
-			errs = append(errs, ValidationError{
-				Field:   "rate_limit.per_user.burst_size",
-				Message: "must be at least 1 when rate limiting is enabled",
-			})
-		}
-	}
-
-	return errs
-}
-
 func (c *EnrichmentConfig) validate() ValidationErrors {
 	var errs ValidationErrors
 
 	if c.WorkerCount < 1 {
 		errs = append(errs, ValidationError{
 			Field:   "enrichment.worker_count",
-			Message: "must be at least 1",
-		})
-	}
-
-	if c.MaxAttempts < 1 {
-		errs = append(errs, ValidationError{
-			Field:   "enrichment.max_attempts",
 			Message: "must be at least 1",
 		})
 	}
@@ -816,18 +628,6 @@ func (c *LoggingConfig) validate() ValidationErrors {
 		})
 	}
 
-	validFormats := map[string]bool{
-		"json": true,
-		"text": true,
-	}
-
-	if !validFormats[strings.ToLower(c.Format)] {
-		errs = append(errs, ValidationError{
-			Field:   "logging.format",
-			Message: fmt.Sprintf("must be one of: json, text; got %q", c.Format),
-		})
-	}
-
 	return errs
 }
 
@@ -847,16 +647,6 @@ func (c *ObservabilityConfig) validate() ValidationErrors {
 			errs = append(errs, ValidationError{
 				Field:   "observability.metrics.path",
 				Message: "required when metrics are enabled",
-			})
-		}
-	}
-
-	// Health validation
-	if c.Health.Enabled {
-		if c.Health.Path == "" {
-			errs = append(errs, ValidationError{
-				Field:   "observability.health.path",
-				Message: "required when health checks are enabled",
 			})
 		}
 	}
@@ -881,35 +671,9 @@ func (c *ObservabilityConfig) validate() ValidationErrors {
 	return errs
 }
 
-func (c *VocabularyConfig) validate() ValidationErrors {
-	var errs ValidationErrors
-
-	if len(c.Languages) == 0 {
-		errs = append(errs, ValidationError{
-			Field:   "vocabulary.languages",
-			Message: "required",
-		})
-	}
-
-	if len(c.Domains) == 0 {
-		errs = append(errs, ValidationError{
-			Field:   "vocabulary.domains",
-			Message: "required",
-		})
-	}
-
-	return errs
-}
-
 // Address returns the server address in host:port format.
 func (c *ServerConfig) Address() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
-}
-
-// Address returns the MCP server address in host:port format.
-// The MCP server binds to the same host as the admin API.
-func (c *MCPConfig) Address(host string) string {
-	return fmt.Sprintf("%s:%d", host, c.Port)
 }
 
 // ConnectionString returns the PostgreSQL connection string.

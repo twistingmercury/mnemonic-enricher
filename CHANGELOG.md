@@ -22,10 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raised the service and E2E suite modules to Go 1.27.2 and pinned the build and E2E runner images to `golang-tooling:go1.27.2`
 - Upgraded `golang.org/x/net` to v0.60.0 to clear five govulncheck findings in v0.59.0
 - Custom latency histograms record fractional milliseconds. Previously durations were truncated to whole milliseconds, so sub-millisecond calls recorded 0.
+- A chunk job makes 5 PostgreSQL round trips instead of 9: starting a job is one `UPDATE ... RETURNING` (was a SELECT then an UPDATE), the chunk is loaded with its pattern's name and tags in one join, the embedding and enriched status are written in one UPDATE, and one aggregate query replaces the separate any-failed and all-enriched checks.
+- The full pattern row (including its content) is loaded once per pattern, by the job that finishes its last chunk, instead of by every chunk job.
+- The Neo4j graph sync (pattern node, concepts, RELATED_TO edges) runs in one session and write transaction instead of three, so a failure part way leaves the graph unchanged. It is traced as one `neo4j SyncPattern` span.
 
 ### Removed
 
 - The unused `mnemonic.patterns.*` instruments and the unused connection pool gauges, replaced by the otelpgx pool statistics.
+- Code copied from the API and MCP server that `main` never reached: the `mcpserver`, `handlers/patterns`, `service/pattern` and `service/search` packages, the unused repository methods (pattern CRUD and list, chunk create/list/search, job create/claim/list, graph reads and deletes), the Neo4j session/runner/result adapter interfaces, and unused telemetry, middleware and version helpers. The `github.com/modelcontextprotocol/go-sdk` dependency is gone with them.
+- Config nothing read: the `mcp`, `rate_limit` and `vocabulary` sections, `openai.max_requests_per_minute`, `enrichment.max_attempts` (the job row carries its own max), `logging.format`, `logging.include_caller` and `observability.health`. Setting them is now ignored.
+- Graph integration test scripts that pointed at a `migrations/` directory this repo doesn't have. `make tests-db-graph` now runs the graph integration test against `NEO4J_URI`.
 
 ## [0.3.2] - 2026-09-09
 

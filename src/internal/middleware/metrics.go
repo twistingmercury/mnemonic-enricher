@@ -55,13 +55,6 @@ func NewRequestMetrics(meter metric.Meter) (*RequestMetrics, error) {
 	}, nil
 }
 
-// Middleware returns Gin middleware that records request metrics.
-// It tracks request count, duration, and in-flight requests with attributes
-// for method, route, and status code.
-func (m *RequestMetrics) Middleware() gin.HandlerFunc {
-	return m.MiddlewareWithSkipPaths(nil)
-}
-
 // MiddlewareWithSkipPaths returns metrics middleware that skips specified paths.
 // This is useful for excluding health checks and metrics endpoints from metrics collection.
 func (m *RequestMetrics) MiddlewareWithSkipPaths(skipPaths []string) gin.HandlerFunc {
