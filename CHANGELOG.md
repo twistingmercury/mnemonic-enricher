@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-16
+
+### Added
+
+- A `--config <path>` flag. It takes precedence over `MNEMONIC_CONFIG_FILE`.
+
+### Changed
+
+- **Breaking:** `database.postgres.max_idle_conns` (`MNEMONIC_DATABASE_POSTGRES_MAX_IDLE_CONNS`) is renamed `database.postgres.min_conns` (`MNEMONIC_DATABASE_POSTGRES_MIN_CONNS`). It always set the pool's minimum open connections, not an idle cap. The default is still 5; it must be between 0 and `max_open_conns`.
+- Config validation errors list one `field: message` per line under the header, without a leading dash.
+- The embedding and extraction clients share one HTTP client and retry loop. The extraction error "unmarshal chat response" now reads "unmarshal response".
+
+### Removed
+
+- **Breaking:** the `mnemonic.http.request.count`, `mnemonic.http.request.duration` and `mnemonic.http.request.in_flight` metrics. Use otelgin's standard `http.server.request.duration`.
+- Checks for states callers cannot produce, test-only config getters, and the health package's global state.
+
+### Fixed
+
+- Neo4j URIs using `bolt+s://`, `bolt+ssc://`, `neo4j+s://` or `neo4j+ssc://` are accepted. They used to fail validation at startup.
+- `--health` reads `server.port` from the config file. It used to see only defaults and environment variables.
+- The RabbitMQ URL escapes the user, password and vhost, so a password containing `@`, `/` or `:` works.
+- `--version` prints to stdout instead of stderr.
+
 ## [0.4.2] - 2026-10-16
 
 ### Changed
