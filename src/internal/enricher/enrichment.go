@@ -54,8 +54,8 @@ type Worker struct {
 
 // New creates a Worker that processes enrichment jobs using svc, consuming
 // messages from sub, configured by cfg. The logger is used for structured
-// logging of worker lifecycle events and errors. jobMetrics, when non-nil,
-// records the count and duration of every handled delivery.
+// logging of worker lifecycle events and errors. jobMetrics records the
+// count and duration of every handled delivery.
 func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentConfig, logger zerolog.Logger, jobMetrics *metrics.Jobs) *Worker {
 	return &Worker{
 		svc:        svc,
@@ -309,9 +309,7 @@ func (w *Worker) finish(ctx context.Context, span trace.Span, err error, outcome
 		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End()
-	if w.jobMetrics != nil {
-		w.jobMetrics.Record(ctx, outcome, time.Since(start))
-	}
+	w.jobMetrics.Record(ctx, outcome, time.Since(start))
 }
 
 // runMaintenance periodically reclaims stale jobs and cleans up old

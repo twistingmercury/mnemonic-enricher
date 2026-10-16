@@ -14,9 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
+	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
 	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 )
@@ -166,6 +168,9 @@ func testConfig(workerCount int) config.EnrichmentConfig {
 	}
 }
 
+// noopJobMetrics records job metrics nowhere.
+var noopJobMetrics, _ = metrics.NewJobs(noop.NewMeterProvider().Meter("test"))
+
 // testLogger returns a no-op logger for tests.
 func testLogger() zerolog.Logger {
 	return zerolog.Nop()
@@ -250,7 +255,7 @@ func TestWorkerProcessesAvailableJobs(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -279,7 +284,7 @@ func TestWorkerNacksOnStartJobFailure(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -308,7 +313,7 @@ func TestWorkerAcksUnavailableJob(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -341,7 +346,7 @@ func TestWorkerRunsJobsDueForRetry(t *testing.T) {
 	}
 	sub := &mockSubscriber{name: "test-queue"}
 
-	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), noopJobMetrics)
 	enricher.SetRetryInterval(w, 10*time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -376,7 +381,7 @@ func TestWorkerNacksOnProcessJobFailure(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -408,7 +413,7 @@ func TestWorkerNacksOnInvalidDeliveryBody(t *testing.T) {
 		},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -429,7 +434,7 @@ func TestWorkerGracefulShutdown(t *testing.T) {
 	// No deliveries; worker will block until ctx is cancelled.
 	sub := &mockSubscriber{name: "test-queue"}
 
-	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -483,7 +488,7 @@ func TestMultipleWorkersConcurrency(t *testing.T) {
 		deliveries: deliveries,
 	}
 
-	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -506,7 +511,7 @@ func TestMaintenanceLoopRuns(t *testing.T) {
 	// a 5-minute ticker, which is too slow for unit tests. We verify the wiring
 	// works by testing the exported Run method completes cleanly.
 	sub := &mockSubscriber{name: "test-queue"}
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -520,7 +525,7 @@ func TestNewReturnsNonNil(t *testing.T) {
 
 	svc := new(mockService)
 	sub := &mockSubscriber{name: "test-queue"}
-	w := enricher.New(svc, sub, testConfig(2), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(2), testLogger(), noopJobMetrics)
 	assert.NotNil(t, w)
 }
 
@@ -568,7 +573,7 @@ func TestGracefulDrainWaitsForInflightJobs(t *testing.T) {
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 2 * time.Second // Generous drain timeout.
 
-	w := enricher.New(svc, sub, cfg, testLogger(), nil)
+	w := enricher.New(svc, sub, cfg, testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -632,7 +637,7 @@ func TestGracefulDrainTimeoutCancelsInflightJobs(t *testing.T) {
 	cfg := testConfig(1)
 	cfg.DrainTimeout = 50 * time.Millisecond // Short drain timeout.
 
-	w := enricher.New(svc, sub, cfg, testLogger(), nil)
+	w := enricher.New(svc, sub, cfg, testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -709,7 +714,7 @@ func TestGracefulDrainMultipleInflightJobs(t *testing.T) {
 	cfg := testConfig(workerCount)
 	cfg.DrainTimeout = 2 * time.Second
 
-	w := enricher.New(svc, sub, cfg, testLogger(), nil)
+	w := enricher.New(svc, sub, cfg, testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -754,7 +759,7 @@ func TestRunWorkerPatternOnlyJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -786,7 +791,7 @@ func TestRunWorkerChunkOnlyJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -818,7 +823,7 @@ func TestRunWorkerBothIDsJobNoPanic(t *testing.T) {
 		deliveries: []queue.Delivery{makeDelivery(job.ID, &ackCalled, &nackCalled)},
 	}
 
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), nil)
+	w := enricher.New(svc, sub, testConfig(1), testLogger(), noopJobMetrics)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
