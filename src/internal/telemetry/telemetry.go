@@ -5,26 +5,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rs/zerolog"
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
-	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 	"github.com/twistingmercury/otelx/v2"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Telemetry wraps the otelx.Telemetry with application-specific helpers.
-type Telemetry struct {
-	otel            *otelx.Telemetry
-	logger          zerolog.Logger
-	metricsRegistry *metrics.Registry
-}
-
-// Initialize creates and configures the telemetry system using otelx.
-// It sets up logging, metrics, and tracing based on the provided configuration.
-func Initialize(ctx context.Context, cfg *config.MnemonicConfig) (*Telemetry, error) {
+// Initialize configures logging, metrics and tracing through otelx. When
+// metrics are enabled, otelx also sets the global meter provider, so
+// otel.Meter records through it; otherwise the global provider is a no-op.
+func Initialize(ctx context.Context, cfg *config.MnemonicConfig) (*otelx.Telemetry, error) {
 	otelCfg, err := buildConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build telemetry config: %w", err)
@@ -34,19 +25,7 @@ func Initialize(ctx context.Context, cfg *config.MnemonicConfig) (*Telemetry, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize telemetry: %w", err)
 	}
-
-	// otelx sets the global meter provider when metrics are enabled; otherwise
-	// the global provider is a no-op.
-	registry, err := metrics.NewRegistry(otel.Meter("mnemonic"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metrics registry: %w", err)
-	}
-
-	return &Telemetry{
-		otel:            tel,
-		logger:          tel.Logger,
-		metricsRegistry: registry,
-	}, nil
+	return tel, nil
 }
 
 // buildConfig maps the application configuration onto an otelx.Config.
@@ -91,25 +70,4 @@ func getEnvironment() string {
 		return env
 	}
 	return "development"
-}
-
-// Shutdown gracefully shuts down telemetry, flushing pending data.
-func (t *Telemetry) Shutdown(ctx context.Context) error {
-	return t.otel.Shutdown(ctx)
-}
-
-// Logger returns the zerolog logger with trace correlation support.
-func (t *Telemetry) Logger() zerolog.Logger {
-	return t.logger
-}
-
-// MetricsRegistry returns the metrics registry for handler instrumentation.
-func (t *Telemetry) MetricsRegistry() *metrics.Registry {
-	return t.metricsRegistry
-}
-
-// Otelx returns the underlying otelx.Telemetry instance.
-// This provides access to otelx-specific functionality like middleware.
-func (t *Telemetry) Otelx() *otelx.Telemetry {
-	return t.otel
 }

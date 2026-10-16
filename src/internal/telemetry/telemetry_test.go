@@ -29,9 +29,6 @@ func TestInitialize(t *testing.T) {
 
 	tel, err := telemetry.Initialize(ctx, createTestConfig())
 	require.NoError(t, err)
-	assert.NotNil(t, tel.MetricsRegistry().Jobs)
-	assert.NotNil(t, tel.MetricsRegistry().Database)
-
 	assert.NoError(t, tel.Shutdown(ctx))
 }
 
@@ -62,5 +59,5 @@ func TestInitializeWithTracingEnabled(t *testing.T) {
 		_ = tel.Shutdown(ctx)
 	}()
 
-	assert.NotNil(t, tel.Otelx().TracerProvider)
+	assert.NotNil(t, tel.TracerProvider)
 }
