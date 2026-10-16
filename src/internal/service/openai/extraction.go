@@ -1,19 +1,12 @@
 package openai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
@@ -21,8 +14,8 @@ import (
 // ErrExtractionFailed is returned when concept extraction fails after all retries.
 var ErrExtractionFailed = errors.New("concept extraction failed")
 
-// ErrEmptyExtractionResponse is returned when the API returns no choices.
-var ErrEmptyExtractionResponse = errors.New("empty chat response: no choices returned")
+// errEmptyExtractionResponse is returned when the API returns no choices.
+var errEmptyExtractionResponse = errors.New("empty chat response: no choices returned")
 
 // Concept represents an entity extracted from pattern content.
 type Concept struct {
@@ -39,9 +32,6 @@ type ExtractionService interface {
 	Extract(ctx context.Context, text string) ([]Concept, error)
 }
 
-// chatCompletionsEndpoint is the default OpenAI chat completions API URL.
-const chatCompletionsEndpoint = "https://api.openai.com/v1/chat/completions"
-
 // systemPrompt instructs the LLM to extract entities from pattern content.
 const systemPrompt = `Extract key concepts from this pattern document.
 
@@ -54,41 +44,21 @@ Return ONLY valid JSON with no additional text. Example format:
 {"concepts": ["error handling"], "technologies": ["Go"], "practices": ["defensive programming"]}`
 
 type openaiExtraction struct {
-	client     *http.Client
-	baseURL    string
-	apiKey     string
-	model      string
-	retries    int
-	retryDelay time.Duration
+	client
+	model string
 }
 
-func newOpenAIExtraction(cfg config.OpenAIConfig, baseURL string) *openaiExtraction {
-	return &openaiExtraction{
-		client: &http.Client{
-			Timeout:   60 * time.Second,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		},
-		baseURL:    baseURL,
-		apiKey:     cfg.APIKey,
-		model:      cfg.ExtractionModel,
-		retries:    cfg.RetryAttempts,
-		retryDelay: cfg.RetryDelay,
-	}
-}
-
-// NewExtractionService creates an ExtractionService backed by the OpenAI chat completions API.
+// NewExtractionService creates an ExtractionService backed by the OpenAI chat
+// completions API at cfg.BaseURL.
 func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
-	baseURL := chatCompletionsEndpoint
-	if cfg.BaseURL != "" {
-		baseURL = strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
-	}
-	return newOpenAIExtraction(cfg, baseURL)
+	return &openaiExtraction{client: newClient(cfg, 60*time.Second), model: cfg.ExtractionModel}
 }
 
-// newExtractionServiceWithURL creates an ExtractionService pointing at a custom URL.
-// This is used for testing with httptest servers.
+// newExtractionServiceWithURL is used only by export_test.go, which is pending
+// deletion; tests set cfg.BaseURL instead.
 func newExtractionServiceWithURL(cfg config.OpenAIConfig, baseURL string) ExtractionService {
-	return newOpenAIExtraction(cfg, baseURL)
+	cfg.BaseURL = baseURL
+	return NewExtractionService(cfg)
 }
 
 // chatRequest is the OpenAI chat completions API request body.
@@ -121,84 +91,30 @@ type extractionResult struct {
 
 // Extract identifies concepts, technologies, and practices in the given text.
 func (e *openaiExtraction) Extract(ctx context.Context, text string) ([]Concept, error) {
-	var lastErr error
-
-	for attempt := range e.retries + 1 {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrExtractionFailed, err)
+	var concepts []Concept
+	err := e.withRetry(ctx, ErrExtractionFailed, "openai.extract.retry", func() error {
+		req := chatRequest{
+			Model: e.model,
+			Messages: []chatMessage{
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: "Pattern content:\n" + text},
+			},
 		}
-
-		concepts, err := e.doExtract(ctx, text)
-		if err == nil {
-			return concepts, nil
+		var resp chatResponse
+		if err := e.postJSON(ctx, "/chat/completions", req, &resp); err != nil {
+			return err
 		}
-		lastErr = err
-
-		// Sleep before retry, unless this was the last attempt.
-		if attempt < e.retries {
-			trace.SpanFromContext(ctx).AddEvent("openai.extract.retry", trace.WithAttributes(
-				attribute.Int("attempt", attempt+1),
-				attribute.String("error", err.Error()),
-			))
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("%w: %w", ErrExtractionFailed, ctx.Err())
-			case <-time.After(e.retryDelay):
-			}
+		if len(resp.Choices) == 0 {
+			return errEmptyExtractionResponse
 		}
-	}
-
-	return nil, fmt.Errorf("%w: %w", ErrExtractionFailed, lastErr)
-}
-
-// doExtract performs a single extraction API call.
-func (e *openaiExtraction) doExtract(ctx context.Context, text string) ([]Concept, error) {
-	reqBody := chatRequest{
-		Model: e.model,
-		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: "Pattern content:\n" + text},
-		},
-	}
-
-	body, err := json.Marshal(reqBody)
+		var err error
+		concepts, err = parseConcepts(resp.Choices[0].Message.Content)
+		return err
+	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+e.apiKey)
-
-	resp, err := e.client.Do(req) // #nosec G704 -- baseURL is from config, not user input
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var chatResp chatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, fmt.Errorf("unmarshal chat response: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return nil, ErrEmptyExtractionResponse
-	}
-
-	content := chatResp.Choices[0].Message.Content
-	return parseConcepts(content)
+	return concepts, nil
 }
 
 // parseConcepts parses the LLM JSON output into a normalized slice of Concept.

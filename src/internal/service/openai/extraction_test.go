@@ -44,6 +44,7 @@ func TestExtract_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/chat/completions", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "Bearer test-api-key", r.Header.Get("Authorization"))
 
@@ -66,7 +67,7 @@ func TestExtract_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	concepts, err := svc.Extract(context.Background(), "test content")
 	require.NoError(t, err)
@@ -100,7 +101,7 @@ func TestExtract_RetryThenSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	concepts, err := svc.Extract(context.Background(), "retry content")
 	require.NoError(t, err)
@@ -122,7 +123,7 @@ func TestExtract_AllRetriesExhausted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	_, err := svc.Extract(context.Background(), "will fail")
 	require.Error(t, err)
@@ -142,7 +143,7 @@ func TestExtract_ContextCancellation(t *testing.T) {
 	defer srv.Close()
 	defer close(done)
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -164,7 +165,7 @@ func TestExtract_InvalidJSONResponse(t *testing.T) {
 
 	cfg := testExtractionConfig()
 	cfg.RetryAttempts = 0
-	svc := openai.NewExtractionServiceForTest(cfg, srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(cfg, srv.URL))
 
 	_, err := svc.Extract(context.Background(), "bad json content")
 	require.Error(t, err)
@@ -182,7 +183,7 @@ func TestExtract_EmptyChoicesResponse(t *testing.T) {
 
 	cfg := testExtractionConfig()
 	cfg.RetryAttempts = 0
-	svc := openai.NewExtractionServiceForTest(cfg, srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(cfg, srv.URL))
 
 	_, err := svc.Extract(context.Background(), "empty choices")
 	require.Error(t, err)
@@ -200,7 +201,7 @@ func TestExtract_NormalizesToLowercase(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	concepts, err := svc.Extract(context.Background(), "normalization test")
 	require.NoError(t, err)
@@ -221,7 +222,7 @@ func TestExtract_EmptyCategories(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewExtractionServiceForTest(testExtractionConfig(), srv.URL)
+	svc := openai.NewExtractionService(withBaseURL(testExtractionConfig(), srv.URL))
 
 	concepts, err := svc.Extract(context.Background(), "nothing to extract")
 	require.NoError(t, err)
