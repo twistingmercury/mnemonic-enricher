@@ -98,7 +98,7 @@ func TestRepository_ClaimDue(t *testing.T) {
 		defer mock.Close()
 
 		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
-			WithArgs("processing", "pending", "120 seconds", 4).
+			WithArgs("processing", "pending", 2*time.Minute, 4).
 			WillReturnRows(pgxmock.NewRows([]string{"id", "pattern_id", "chunk_id"}).
 				AddRow(jobA, (*uuid.UUID)(nil), &chunkA).
 				AddRow(jobB, (*uuid.UUID)(nil), &chunkB))
@@ -118,7 +118,7 @@ func TestRepository_ClaimDue(t *testing.T) {
 		defer mock.Close()
 
 		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
-			WithArgs("processing", "pending", "120 seconds", 4).
+			WithArgs("processing", "pending", 2*time.Minute, 4).
 			WillReturnRows(pgxmock.NewRows([]string{"id", "pattern_id", "chunk_id"}))
 
 		got, err := enrichmentjob.NewRepository(mock).ClaimDue(context.Background(), 2*time.Minute, 4)
@@ -136,7 +136,7 @@ func TestRepository_ClaimDue(t *testing.T) {
 		defer mock.Close()
 
 		mock.ExpectQuery("FOR UPDATE SKIP LOCKED").
-			WithArgs("processing", "pending", "120 seconds", 4).
+			WithArgs("processing", "pending", 2*time.Minute, 4).
 			WillReturnError(errors.New("boom"))
 
 		_, err = enrichmentjob.NewRepository(mock).ClaimDue(context.Background(), 2*time.Minute, 4)
@@ -219,7 +219,7 @@ func TestRepository_MarkFailed_WithRetry(t *testing.T) {
 			"pending",
 			"failed",
 			pgxmock.AnyArg(), // last_error (*string)
-			"300 seconds",    // retry delay interval
+			retryDelay,
 		).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
@@ -247,7 +247,7 @@ func TestRepository_MarkFailed_MaxAttemptsReached(t *testing.T) {
 			"pending",
 			"failed",
 			pgxmock.AnyArg(), // last_error (*string)
-			"300 seconds",    // retry delay interval
+			retryDelay,
 		).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
@@ -274,7 +274,7 @@ func TestRepository_MarkFailed_NotFound(t *testing.T) {
 			"pending",
 			"failed",
 			pgxmock.AnyArg(),
-			"300 seconds",
+			retryDelay,
 		).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 
@@ -300,7 +300,7 @@ func TestRepository_ReclaimStale(t *testing.T) {
 			name: "reclaims stale jobs",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectExec("UPDATE enrichment_jobs SET").
-					WithArgs("pending", "failed", "processing", "1800 seconds").
+					WithArgs("pending", "failed", "processing", 30*time.Minute).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 5))
 			},
 			wantCount: 5,
@@ -309,7 +309,7 @@ func TestRepository_ReclaimStale(t *testing.T) {
 			name: "no stale jobs",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectExec("UPDATE enrichment_jobs SET").
-					WithArgs("pending", "failed", "processing", "1800 seconds").
+					WithArgs("pending", "failed", "processing", 30*time.Minute).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 			},
 			wantCount: 0,
@@ -318,7 +318,7 @@ func TestRepository_ReclaimStale(t *testing.T) {
 			name: "database error is wrapped",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectExec("UPDATE enrichment_jobs SET").
-					WithArgs("pending", "failed", "processing", "1800 seconds").
+					WithArgs("pending", "failed", "processing", 30*time.Minute).
 					WillReturnError(errors.New("connection reset"))
 			},
 			wantCount: 0,
