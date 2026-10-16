@@ -244,7 +244,7 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 		chunkRepo:     new(mockChunkRepo),
 	}
 
-	svc, err := enrichment.New(
+	svc := enrichment.New(
 		deps.jobRepo,
 		deps.patternRepo,
 		deps.graphRepo,
@@ -254,7 +254,6 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 		deps.chunkRepo,
 		zerolog.Nop(),
 	)
-	require.NoError(t, err)
 
 	return svc, deps
 }
@@ -305,24 +304,6 @@ func assertNoPatternWork(t *testing.T, deps *testDeps) {
 	deps.patternRepo.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
 	deps.extractionSvc.AssertNotCalled(t, "Extract", mock.Anything, mock.Anything)
 	deps.graphRepo.AssertNotCalled(t, "SyncPattern", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-// TestNew_NilChunkRepo verifies that New returns an error when chunkRepo is nil,
-// preventing the misconfiguration from surfacing as a runtime failure.
-func TestNew_NilChunkRepo(t *testing.T) {
-	t.Parallel()
-	_, err := enrichment.New(
-		new(mockJobRepo),
-		new(mockPatternRepo),
-		new(mockGraphRepo),
-		new(mockEmbeddingSvc),
-		new(mockExtractionSvc),
-		testConfig(),
-		nil, // chunkRepo intentionally nil
-		zerolog.Nop(),
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "chunkRepo")
 }
 
 // ---------- StartJob ----------

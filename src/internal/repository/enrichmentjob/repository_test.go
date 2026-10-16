@@ -285,34 +285,6 @@ func TestRepository_MarkFailed_NotFound(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestRepository_MarkFailed_NilError(t *testing.T) {
-	t.Parallel()
-
-	jobID := uuid.New()
-	retryDelay := 5 * time.Minute
-
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
-	defer mock.Close()
-
-	// When jobErr is nil, last_error should be nil (*string nil, not interface nil)
-	mock.ExpectExec("UPDATE enrichment_jobs SET").
-		WithArgs(
-			jobID,
-			"pending",
-			"failed",
-			pgxmock.AnyArg(), // last_error is *string nil (NULL in DB)
-			"300 seconds",    // retry delay interval
-		).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
-
-	repo := enrichmentjob.NewRepository(mock)
-	err = repo.MarkFailed(context.Background(), jobID, nil, retryDelay)
-
-	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
 func TestRepository_ReclaimStale(t *testing.T) {
 	t.Parallel()
 

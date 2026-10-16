@@ -179,14 +179,11 @@ func wireDependencies(
 	extractionSvc := openaisvc.NewExtractionService(cfg.OpenAI)
 
 	// Enrichment service.
-	enrichmentSvc, err := enrichmentsvc.New(
+	enrichmentSvc := enrichmentsvc.New(
 		enrichmentJobRepo, patternRepo, graphRepo,
 		embeddingSvc, extractionSvc,
 		cfg.Enrichment, chunkRepo, logger,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("wire enrichment service: %w", err)
-	}
 
 	// Queue subscriber.
 	switch cfg.Queue.Provider {

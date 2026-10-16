@@ -150,13 +150,6 @@ func (r *pgxRepository) MarkCompleted(ctx context.Context, id uuid.UUID) error {
 // If attempts >= max_attempts, the job remains in failed state.
 // Uses SQL now() for timestamps to ensure consistency with database time.
 func (r *pgxRepository) MarkFailed(ctx context.Context, id uuid.UUID, jobErr error, retryDelay time.Duration) error {
-	// Use *string nil for empty error to set NULL in database
-	var errMsg *string
-	if jobErr != nil {
-		msg := jobErr.Error()
-		errMsg = &msg
-	}
-
 	// Single atomic UPDATE with CASE expression:
 	// - Atomically increments attempts
 	// - Sets status to 'pending' if retrying, 'failed' if max attempts reached
@@ -180,7 +173,7 @@ func (r *pgxRepository) MarkFailed(ctx context.Context, id uuid.UUID, jobErr err
 		id,
 		string(StatusPending),
 		string(StatusFailed),
-		errMsg,
+		jobErr.Error(),
 		delayInterval,
 	)
 	if err != nil {

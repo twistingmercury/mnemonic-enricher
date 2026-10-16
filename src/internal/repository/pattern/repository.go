@@ -49,10 +49,6 @@ func (r *pgxRepository) Get(ctx context.Context, id uuid.UUID) (*Pattern, error)
 // UpdateEnrichmentStatus updates the enrichment state of a pattern. When
 // status is "enriched", enriched_at is set to the current time.
 func (r *pgxRepository) UpdateEnrichmentStatus(ctx context.Context, id uuid.UUID, status string, errMsg *string) error {
-	if !repository.IsValidEnrichmentStatus(status) {
-		return fmt.Errorf("invalid enrichment status: %q", status)
-	}
-
 	now := time.Now()
 
 	var enrichedAt *time.Time
