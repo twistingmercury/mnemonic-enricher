@@ -21,7 +21,7 @@ const (
 	DefaultPostgresUsername        = "mnemonic"
 	DefaultPostgresSSLMode         = "prefer"
 	DefaultPostgresMaxOpenConns    = 25
-	DefaultPostgresMaxIdleConns    = 5
+	DefaultPostgresMinConns        = 5
 	DefaultPostgresConnMaxLifetime = 5 * time.Minute
 )
 
