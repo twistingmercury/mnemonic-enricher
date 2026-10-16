@@ -54,13 +54,6 @@ func NewExtractionService(cfg config.OpenAIConfig) ExtractionService {
 	return &openaiExtraction{client: newClient(cfg, 60*time.Second), model: cfg.ExtractionModel}
 }
 
-// newExtractionServiceWithURL is used only by export_test.go, which is pending
-// deletion; tests set cfg.BaseURL instead.
-func newExtractionServiceWithURL(cfg config.OpenAIConfig, baseURL string) ExtractionService {
-	cfg.BaseURL = baseURL
-	return NewExtractionService(cfg)
-}
-
 // chatRequest is the OpenAI chat completions API request body.
 type chatRequest struct {
 	Model    string        `json:"model"`

@@ -39,13 +39,6 @@ func NewEmbeddingService(cfg config.OpenAIConfig) EmbeddingService {
 	}
 }
 
-// newEmbeddingServiceWithURL is used only by export_test.go, which is pending
-// deletion; tests set cfg.BaseURL instead.
-func newEmbeddingServiceWithURL(cfg config.OpenAIConfig, baseURL string) EmbeddingService {
-	cfg.BaseURL = baseURL
-	return NewEmbeddingService(cfg)
-}
-
 // embeddingRequest is the OpenAI embeddings API request body.
 type embeddingRequest struct {
 	Input      string `json:"input"`
