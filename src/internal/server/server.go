@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
@@ -84,7 +85,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	}
 
 	// Create request metrics middleware.
-	requestMetrics, err := middleware.NewRequestMetrics(tel.Meter("mnemonic/http"))
+	requestMetrics, err := middleware.NewRequestMetrics(otel.Meter("mnemonic/http"))
 	if err != nil {
 		return fmt.Errorf("failed to create request metrics: %w", err)
 	}
