@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// apiBaseURL returns the base URL for the API from environment or default.
-func apiBaseURL() string {
-	if url := os.Getenv("ENRICHER_URL"); url != "" {
-		return url
+// envOr returns the env var key, or def when it is unset or empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	return "http://localhost:8080"
+	return def
 }
 
 // TestClient wraps an HTTP client with helper methods for E2E tests.
@@ -28,25 +28,18 @@ func NewTestClient(t *testing.T) *TestClient {
 	t.Helper()
 	return &TestClient{
 		Client:  &http.Client{Timeout: 10 * time.Second},
-		BaseURL: apiBaseURL(),
+		BaseURL: envOr("ENRICHER_URL", "http://localhost:8080"),
 	}
 }
 
-// Do executes an HTTP request, setting Content-Type and Accept headers.
-func (c *TestClient) Do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	return c.Client.Do(req)
-}
-
-// Get performs a GET request to the specified path.
+// Get performs a GET request to the specified path, accepting JSON.
 func (c *TestClient) Get(path string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodGet, c.BaseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
-	return c.Do(req)
+	req.Header.Set("Accept", "application/json")
+	return c.Client.Do(req)
 }
 
 // ReadBody reads and closes the response body.

@@ -70,21 +70,6 @@ func TestHealthCheck_AllHealthyReturns200(t *testing.T) {
 	}
 }
 
-// TestHealthCheck_NoAuthRequired verifies the health endpoint returns a
-// successful response without any authentication headers. This confirms the
-// endpoint is public as specified.
-func TestHealthCheck_NoAuthRequired(t *testing.T) {
-	client := helpers.NewTestClient(t)
-
-	resp, err := client.Get("/health")
-	if err != nil {
-		t.Fatalf("failed to GET /health without auth: %v", err)
-	}
-	defer resp.Body.Close()
-
-	helpers.AssertStatusCode(t, resp, http.StatusOK)
-}
-
 // TestHealthCheck_ResponseContainsAllComponents verifies the dependencies array
 // in the response contains an entry for every dependency registered via the
 // health package.
@@ -181,20 +166,6 @@ func TestVersion_ReturnsOKWithVersionInfo(t *testing.T) {
 	}
 }
 
-// TestVersion_NoAuthRequired verifies the version endpoint returns a
-// successful response without any authentication headers.
-func TestVersion_NoAuthRequired(t *testing.T) {
-	client := helpers.NewTestClient(t)
-
-	resp, err := client.Get("/version")
-	if err != nil {
-		t.Fatalf("failed to GET /version without auth: %v", err)
-	}
-	defer resp.Body.Close()
-
-	helpers.AssertStatusCode(t, resp, http.StatusOK)
-}
-
 // TestVersion_ContentTypeIsJSON verifies the Content-Type header is
 // application/json (with optional charset parameter).
 func TestVersion_ContentTypeIsJSON(t *testing.T) {
@@ -271,23 +242,6 @@ func TestMetrics_ReturnsOKWithPrometheusFormat(t *testing.T) {
 	// Prometheus exposition format uses text/plain or the OpenMetrics content type.
 	if !strings.Contains(ct, "text/plain") && !strings.Contains(ct, "openmetrics") {
 		t.Fatalf("expected Content-Type to contain 'text/plain' or 'openmetrics', got %q", ct)
-	}
-}
-
-// TestMetrics_NoAuthRequired verifies the metrics endpoint returns a
-// successful response without any authentication headers.
-func TestMetrics_NoAuthRequired(t *testing.T) {
-	metricsURL := metricsBaseURL()
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-
-	resp, err := httpClient.Get(metricsURL + "/metrics")
-	if err != nil {
-		t.Fatalf("failed to GET %s/metrics: %v", metricsURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 }
 

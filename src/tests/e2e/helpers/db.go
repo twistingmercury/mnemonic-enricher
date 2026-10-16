@@ -3,7 +3,6 @@ package helpers
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -19,10 +18,7 @@ const defaultPostgresDSN = "postgres://mnemonic:mnemonic_dev@localhost:5432/mnem
 func NewPGConn(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	dsn := os.Getenv("POSTGRES_DSN")
-	if dsn == "" {
-		dsn = defaultPostgresDSN
-	}
+	dsn := envOr("POSTGRES_DSN", defaultPostgresDSN)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -142,47 +138,7 @@ func CleanupPattern(t *testing.T, pool *pgxpool.Pool, patternID uuid.UUID) {
 	}
 }
 
-// PollJobStatus polls enrichment_jobs.status every 500ms until it reaches
-// "completed" or "failed", or until timeout expires.
-// Returns the final status string. Calls t.Fatal on timeout.
-func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) string {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("timed out waiting for job %s to complete after %v", jobID, timeout)
-			return ""
-		default:
-		}
-
-		var status string
-		var lastError *string
-		err := pool.QueryRow(ctx, `SELECT status, last_error FROM enrichment_jobs WHERE id = $1`, jobID).
-			Scan(&status, &lastError)
-		if err != nil {
-			t.Fatalf("failed to query job status for %s: %v", jobID, err)
-		}
-
-		if status == "completed" || status == "failed" {
-			if status == "failed" {
-				errMsg := "<nil>"
-				if lastError != nil {
-					errMsg = *lastError
-				}
-				t.Fatalf("job %s failed: last_error=%s", jobID, errMsg)
-			}
-			return status
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-// PollJobStatusRaw polls enrichment_jobs until status is "completed" or "failed"
+// PollJobStatusRaw polls enrichment_jobs every 500ms until status is "completed" or "failed"
 // or timeout expires. Returns (status, lastError). Does NOT call t.Fatal on "failed".
 // Calls t.Fatal only on timeout or query error.
 func PollJobStatusRaw(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) (string, string) {
@@ -217,6 +173,16 @@ func PollJobStatusRaw(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout
 
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// PollJobStatus is PollJobStatusRaw, but also calls t.Fatal if the job fails.
+func PollJobStatus(t *testing.T, pool *pgxpool.Pool, jobID uuid.UUID, timeout time.Duration) string {
+	t.Helper()
+	status, lastError := PollJobStatusRaw(t, pool, jobID, timeout)
+	if status == "failed" {
+		t.Fatalf("job %s failed: last_error=%s", jobID, lastError)
+	}
+	return status
 }
 
 // AssertChunkEmbeddingSet asserts that the chunk's embedding column is NOT NULL.
