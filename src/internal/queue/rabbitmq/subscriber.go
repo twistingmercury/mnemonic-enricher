@@ -4,37 +4,33 @@ package rabbitmq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rs/zerolog/log"
 
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/queue"
 )
 
-// RabbitMQConfig holds the connection and consumer settings for a RabbitMQ
-// subscriber. It is defined here so that Cycle 3 is self-contained; Cycle 4
-// will migrate it into the central config package.
-type RabbitMQConfig struct {
-	Host           string
-	Port           int
-	User           string
-	Password       string // #nosec G117 -- field holds a credential by design; value comes from env/secret manager, never hardcoded
-	VHost          string
-	Queue          string
-	PrefetchCount  int
-	ReconnectDelay time.Duration
-}
-
-// amqpURL builds an AMQP connection URL from the configuration fields.
-func (c RabbitMQConfig) amqpURL() string {
-	return fmt.Sprintf("amqp://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, c.VHost)
+// amqpURL builds an AMQP connection URL from cfg, escaping the credentials
+// and virtual host.
+func amqpURL(cfg config.RabbitMQConfig) string {
+	return amqp.URI{
+		Scheme:   "amqp",
+		Host:     cfg.Host,
+		Port:     cfg.Port,
+		Username: cfg.User,
+		Password: cfg.Password,
+		Vhost:    cfg.VHost,
+	}.String()
 }
 
 // RabbitMQSubscriber implements queue.Subscriber for RabbitMQ.
 type RabbitMQSubscriber struct {
-	cfg  RabbitMQConfig
+	cfg  config.RabbitMQConfig
 	conn *amqp.Connection
 	ch   *amqp.Channel
 }
@@ -42,7 +38,7 @@ type RabbitMQSubscriber struct {
 // NewSubscriber dials RabbitMQ, sets up the QoS prefetch, and returns a
 // ready-to-use queue.Subscriber. The caller is responsible for calling Close
 // when the subscriber is no longer needed.
-func NewSubscriber(cfg RabbitMQConfig) (queue.Subscriber, error) {
+func NewSubscriber(cfg config.RabbitMQConfig) (queue.Subscriber, error) {
 	conn, ch, err := dial(cfg)
 	if err != nil {
 		return nil, err
@@ -50,9 +46,10 @@ func NewSubscriber(cfg RabbitMQConfig) (queue.Subscriber, error) {
 	return &RabbitMQSubscriber{cfg: cfg, conn: conn, ch: ch}, nil
 }
 
-// dial opens a new connection and channel, and configures QoS.
-func dial(cfg RabbitMQConfig) (*amqp.Connection, *amqp.Channel, error) {
-	conn, err := amqp.Dial(cfg.amqpURL())
+// dial opens a new connection and channel, and configures QoS. A prefetch
+// count of 0 means no limit.
+func dial(cfg config.RabbitMQConfig) (*amqp.Connection, *amqp.Channel, error) {
+	conn, err := amqp.Dial(amqpURL(cfg))
 	if err != nil {
 		return nil, nil, fmt.Errorf("rabbitmq: dial: %w", err)
 	}
@@ -63,12 +60,10 @@ func dial(cfg RabbitMQConfig) (*amqp.Connection, *amqp.Channel, error) {
 		return nil, nil, fmt.Errorf("rabbitmq: open channel: %w", err)
 	}
 
-	if cfg.PrefetchCount > 0 {
-		if err = ch.Qos(cfg.PrefetchCount, 0, false); err != nil {
-			_ = ch.Close()
-			_ = conn.Close()
-			return nil, nil, fmt.Errorf("rabbitmq: set qos: %w", err)
-		}
+	if err = ch.Qos(cfg.PrefetchCount, 0, false); err != nil {
+		_ = ch.Close()
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("rabbitmq: set qos: %w", err)
 	}
 
 	return conn, ch, nil
@@ -79,36 +74,20 @@ func (s *RabbitMQSubscriber) Name() string {
 	return s.cfg.Queue
 }
 
-// Close releases the channel and connection in order. Errors from both
-// operations are joined; the function always attempts both closes.
+// Close releases the channel and connection, attempting both and joining
+// their errors.
 func (s *RabbitMQSubscriber) Close() error {
-	var chErr, connErr error
-	if s.ch != nil {
-		chErr = s.ch.Close()
-	}
-	if s.conn != nil {
-		connErr = s.conn.Close()
-	}
-	if chErr != nil && connErr != nil {
-		return fmt.Errorf("rabbitmq: close channel: %w; close connection: %v", chErr, connErr)
-	}
-	if chErr != nil {
-		return fmt.Errorf("rabbitmq: close channel: %w", chErr)
-	}
-	if connErr != nil {
-		return fmt.Errorf("rabbitmq: close connection: %w", connErr)
-	}
-	return nil
+	return errors.Join(s.ch.Close(), s.conn.Close())
 }
 
 // Subscribe starts consuming from the configured queue and returns a channel
 // of provider-agnostic queue.Delivery values. The goroutine runs until ctx is
 // cancelled. If the broker connection is lost the subscriber reconnects after
 // cfg.ReconnectDelay, honouring ctx cancellation during the wait.
-func (s *RabbitMQSubscriber) Subscribe(ctx context.Context) (<-chan queue.Delivery, error) {
+func (s *RabbitMQSubscriber) Subscribe(ctx context.Context) <-chan queue.Delivery {
 	out := make(chan queue.Delivery)
 	go s.consumeLoop(ctx, out)
-	return out, nil
+	return out
 }
 
 // consumeLoop is the long-running goroutine that reads from the broker and
@@ -208,12 +187,8 @@ func (s *RabbitMQSubscriber) waitAndReconnect(ctx context.Context) bool {
 	}
 
 	// Close stale resources before replacing them.
-	if s.ch != nil {
-		_ = s.ch.Close()
-	}
-	if s.conn != nil {
-		_ = s.conn.Close()
-	}
+	_ = s.ch.Close()
+	_ = s.conn.Close()
 
 	s.conn = conn
 	s.ch = ch

@@ -72,7 +72,6 @@ type enrichmentService struct {
 }
 
 // New creates a new enrichment Service backed by the given dependencies.
-// Returns an error if any required dependency is nil.
 func New(
 	jobRepo enrichmentjob.Repository,
 	patternRepo patternrepo.Repository,
@@ -82,25 +81,7 @@ func New(
 	cfg config.EnrichmentConfig,
 	chunkRepo chunkrepo.Repository,
 	logger zerolog.Logger,
-) (Service, error) {
-	if jobRepo == nil {
-		return nil, fmt.Errorf("enrichment.New: jobRepo is required")
-	}
-	if patternRepo == nil {
-		return nil, fmt.Errorf("enrichment.New: patternRepo is required")
-	}
-	if graphRepo == nil {
-		return nil, fmt.Errorf("enrichment.New: graphRepo is required")
-	}
-	if embeddingSvc == nil {
-		return nil, fmt.Errorf("enrichment.New: embeddingSvc is required")
-	}
-	if extractionSvc == nil {
-		return nil, fmt.Errorf("enrichment.New: extractionSvc is required")
-	}
-	if chunkRepo == nil {
-		return nil, fmt.Errorf("enrichment.New: chunkRepo is required")
-	}
+) Service {
 	return &enrichmentService{
 		jobRepo:       jobRepo,
 		patternRepo:   patternRepo,
@@ -110,7 +91,7 @@ func New(
 		extractionSvc: extractionSvc,
 		cfg:           cfg,
 		logger:        logger,
-	}, nil
+	}
 }
 
 // StartJob marks a pending, due job as processing and returns it.
@@ -293,21 +274,15 @@ func (s *enrichmentService) failChunkJob(ctx context.Context, job *enrichmentjob
 // It returns an error wrapping ErrJobFailed and cause when the failure is
 // recorded, or the recording error when it cannot be (unrecoverable).
 func (s *enrichmentService) failJob(ctx context.Context, job *enrichmentjob.Job, cause error) error {
+	// Errors returned here are logged by the worker, so they are not logged
+	// twice.
 	if err := s.jobRepo.MarkFailed(ctx, job.ID, cause, s.cfg.RetryDelay); err != nil {
-		s.logger.Error().
-			Err(err).
-			Str("job_id", job.ID.String()).
-			Msg("failed to mark job as failed")
 		return fmt.Errorf("mark job failed: %w (original cause: %v)", err, cause)
 	}
 
 	errMsg := cause.Error()
 	if job.PatternID != nil {
 		if err := s.patternRepo.UpdateEnrichmentStatus(ctx, *job.PatternID, "failed", &errMsg); err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("pattern_id", job.PatternID.String()).
-				Msg("failed to update pattern enrichment status")
 			return fmt.Errorf("update enrichment status: %w (original cause: %v)", err, cause)
 		}
 	}

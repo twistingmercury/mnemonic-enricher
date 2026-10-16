@@ -26,7 +26,7 @@ func NewPostgresPool(ctx context.Context, cfg config.PostgresConfig) (*pgxpool.P
 	}
 
 	poolCfg.MaxConns = cfg.MaxOpenConns
-	poolCfg.MinConns = cfg.MaxIdleConns
+	poolCfg.MinConns = cfg.MinConns
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
 	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
 
@@ -51,11 +51,9 @@ func NewPostgresPool(ctx context.Context, cfg config.PostgresConfig) (*pgxpool.P
 // NewNeo4jDriver creates a neo4j.DriverWithContext configured from the provided Neo4jConfig.
 // The caller is responsible for calling driver.Close(ctx) when done.
 func NewNeo4jDriver(ctx context.Context, cfg config.Neo4jConfig) (neo4j.DriverWithContext, error) {
-	username, password := cfg.Credentials()
-
 	driver, err := neo4j.NewDriverWithContext(
 		cfg.URI,
-		neo4j.BasicAuth(username, password, ""),
+		neo4j.BasicAuth(cfg.Username, cfg.Password, ""),
 		func(driverCfg *neo4jcfg.Config) {
 			driverCfg.MaxConnectionPoolSize = cfg.MaxConnectionPoolSize
 			driverCfg.ConnectionAcquisitionTimeout = cfg.ConnectionAcquisitionTimeout

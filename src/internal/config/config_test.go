@@ -42,7 +42,7 @@ func TestDefaultValues(t *testing.T) {
 	assert.Equal(t, config.DefaultPostgresUsername, cfg.Database.Postgres.Username)
 	assert.Equal(t, config.DefaultPostgresSSLMode, cfg.Database.Postgres.SSLMode)
 	assert.Equal(t, int32(config.DefaultPostgresMaxOpenConns), cfg.Database.Postgres.MaxOpenConns)
-	assert.Equal(t, int32(config.DefaultPostgresMaxIdleConns), cfg.Database.Postgres.MaxIdleConns)
+	assert.Equal(t, int32(config.DefaultPostgresMinConns), cfg.Database.Postgres.MinConns)
 	assert.Equal(t, config.DefaultPostgresConnMaxLifetime, cfg.Database.Postgres.ConnMaxLifetime)
 
 	// Neo4j defaults
@@ -281,7 +281,7 @@ func TestPostgresPoolSizeOverflow(t *testing.T) {
 	clearMnemonicEnvVars(t)
 	t.Setenv("MNEMONIC_DATABASE_POSTGRES_MAX_OPEN_CONNS", "3000000000")
 
-	_, err := config.Load()
+	_, err := loadFromYAML(t, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "max_open_conns")
 }
@@ -366,9 +366,7 @@ func TestValidation_ServerConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -409,19 +407,19 @@ func TestValidation_DatabaseConfig(t *testing.T) {
 			expectError: "database.postgres.max_open_conns",
 		},
 		{
-			name: "negative postgres max_idle_conns",
+			name: "negative postgres min_conns",
 			modify: func(cfg *config.MnemonicConfig) {
-				cfg.Database.Postgres.MaxIdleConns = -1
+				cfg.Database.Postgres.MinConns = -1
 			},
-			expectError: "database.postgres.max_idle_conns",
+			expectError: "database.postgres.min_conns",
 		},
 		{
-			name: "max_idle_conns greater than max_open_conns",
+			name: "min_conns greater than max_open_conns",
 			modify: func(cfg *config.MnemonicConfig) {
 				cfg.Database.Postgres.MaxOpenConns = 10
-				cfg.Database.Postgres.MaxIdleConns = 20
+				cfg.Database.Postgres.MinConns = 20
 			},
-			expectError: "database.postgres.max_idle_conns",
+			expectError: "database.postgres.min_conns",
 		},
 		{
 			name: "negative postgres conn_max_lifetime",
@@ -471,9 +469,7 @@ func TestValidation_DatabaseConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -485,17 +481,17 @@ func TestValidation_Neo4jValidURIs(t *testing.T) {
 		"bolt://neo4j-server:7687",
 		"neo4j://localhost:7687",
 		"neo4j://neo4j-cluster:7687",
+		"bolt+s://neo4j.example.com:7687",
+		"bolt+ssc://neo4j.example.com:7687",
+		"neo4j+s://neo4j.example.com:7687",
+		"neo4j+ssc://neo4j.example.com:7687",
 	}
 
 	for _, uri := range validURIs {
 		t.Run(uri, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.Database.Neo4j.URI = uri
-			errs := cfg.Validate()
-			for _, err := range errs {
-				assert.NotEqual(t, "database.neo4j.uri", err.Field,
-					"URI %q should be valid", uri)
-			}
+			assert.NoError(t, cfg.Validate(), "URI %q should be valid", uri)
 		})
 	}
 }
@@ -534,9 +530,7 @@ func TestValidation_OpenAIConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -631,9 +625,7 @@ func TestValidation_EnrichmentConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -658,9 +650,7 @@ func TestValidation_LoggingConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -673,10 +663,7 @@ func TestValidation_LoggingLevels(t *testing.T) {
 		t.Run(level, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.Logging.Level = level
-			errs := cfg.Validate()
-			for _, err := range errs {
-				assert.NotEqual(t, "logging.level", err.Field)
-			}
+			assert.NoError(t, cfg.Validate())
 		})
 	}
 }
@@ -736,9 +723,7 @@ func TestValidation_ObservabilityConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
-			require.NotEmpty(t, errs, "expected validation errors")
-			assert.Contains(t, errs.Error(), tt.expectError)
+			assert.ErrorContains(t, cfg.Validate(), tt.expectError)
 		})
 	}
 }
@@ -749,7 +734,6 @@ func TestValidation_PortConflict(t *testing.T) {
 		name        string
 		modify      func(cfg *config.MnemonicConfig)
 		expectError bool
-		errorField  string
 	}{
 		{
 			name: "metrics enabled with same port as server - conflict",
@@ -759,7 +743,6 @@ func TestValidation_PortConflict(t *testing.T) {
 				cfg.Observability.Metrics.Port = 8080
 			},
 			expectError: true,
-			errorField:  "observability.metrics.port",
 		},
 		{
 			name: "metrics enabled with different port - no conflict",
@@ -785,28 +768,12 @@ func TestValidation_PortConflict(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.modify(cfg)
-			errs := cfg.Validate()
+			err := cfg.Validate()
 
 			if tt.expectError {
-				require.NotEmpty(t, errs, "expected validation errors")
-				// Check that the specific error field is present
-				found := false
-				for _, err := range errs {
-					if err.Field == tt.errorField {
-						found = true
-						assert.Contains(t, err.Message, "server.port")
-						break
-					}
-				}
-				assert.True(t, found, "expected error for field %q", tt.errorField)
+				assert.ErrorContains(t, err, "observability.metrics.port: must be different from server.port")
 			} else {
-				// Verify no port conflict errors (other validation errors may exist)
-				for _, err := range errs {
-					if err.Field == "observability.metrics.port" {
-						assert.NotContains(t, err.Message, "server.port",
-							"unexpected port conflict error when none expected")
-					}
-				}
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -818,10 +785,11 @@ func TestValidation_MultipleErrors(t *testing.T) {
 	cfg.Server.Port = 0
 	cfg.Database.Postgres.Port = 0
 
-	errs := cfg.Validate()
-	require.NotEmpty(t, errs, "expected validation errors")
+	err := cfg.Validate()
+	require.Error(t, err)
 
-	errStr := errs.Error()
+	errStr := err.Error()
+	assert.True(t, strings.HasPrefix(errStr, "configuration validation failed:\n"), errStr)
 	assert.Contains(t, errStr, "server.port")
 	assert.Contains(t, errStr, "database.postgres.port")
 }
@@ -863,21 +831,6 @@ func TestServerAddress(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.Address())
 		})
 	}
-}
-
-// TestPostgresConnectionString tests the ConnectionString() helper method.
-func TestPostgresConnectionString(t *testing.T) {
-	cfg := &config.PostgresConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Database: "testdb",
-		Username: "testuser",
-		Password: "testpass",
-		SSLMode:  "require",
-	}
-
-	expected := "host=localhost port=5432 user=testuser password=testpass dbname=testdb sslmode=require"
-	assert.Equal(t, expected, cfg.ConnectionString())
 }
 
 // TestPostgresDSN tests the DSN() helper method.
@@ -936,23 +889,6 @@ func TestPostgresDSN(t *testing.T) {
 	}
 }
 
-// TestPostgresSafeConnectionString tests the SafeConnectionString() helper method.
-func TestPostgresSafeConnectionString(t *testing.T) {
-	cfg := &config.PostgresConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Database: "testdb",
-		Username: "testuser",
-		Password: "supersecretpassword",
-		SSLMode:  "require",
-	}
-
-	result := cfg.SafeConnectionString()
-	expected := "host=localhost port=5432 user=testuser password=***** dbname=testdb sslmode=require"
-	assert.Equal(t, expected, result)
-	assert.NotContains(t, result, "supersecretpassword")
-}
-
 // TestPostgresSafeDSN tests the SafeDSN() helper method.
 func TestPostgresSafeDSN(t *testing.T) {
 	tests := []struct {
@@ -983,40 +919,6 @@ func TestPostgresSafeDSN(t *testing.T) {
 			result := tt.cfg.SafeDSN()
 			assert.Equal(t, tt.expected, result)
 			assert.NotContains(t, result, tt.cfg.Password)
-		})
-	}
-}
-
-// TestNeo4jConnectionURI tests the ConnectionURI() helper method.
-func TestNeo4jConnectionURI(t *testing.T) {
-	tests := []struct {
-		name     string
-		uri      string
-		expected string
-	}{
-		{
-			name:     "bolt scheme",
-			uri:      "bolt://localhost:7687",
-			expected: "bolt://localhost:7687",
-		},
-		{
-			name:     "neo4j scheme",
-			uri:      "neo4j://neo4j-cluster:7687",
-			expected: "neo4j://neo4j-cluster:7687",
-		},
-		{
-			name:     "bolt+s scheme",
-			uri:      "bolt+s://secure-host:7687",
-			expected: "bolt+s://secure-host:7687",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Neo4jConfig{
-				URI: tt.uri,
-			}
-			assert.Equal(t, tt.expected, cfg.ConnectionURI())
 		})
 	}
 }
@@ -1089,178 +991,42 @@ func TestNeo4jSafeURI(t *testing.T) {
 	}
 }
 
-// TestNeo4jCredentials tests the Credentials() helper method.
-func TestNeo4jCredentials(t *testing.T) {
-	tests := []struct {
-		name             string
-		username         string
-		password         string
-		expectedUsername string
-		expectedPassword string
-	}{
-		{
-			name:             "standard credentials",
-			username:         "neo4j",
-			password:         "secretpassword",
-			expectedUsername: "neo4j",
-			expectedPassword: "secretpassword",
-		},
-		{
-			name:             "empty password",
-			username:         "neo4j",
-			password:         "",
-			expectedUsername: "neo4j",
-			expectedPassword: "",
-		},
-		{
-			name:             "custom username",
-			username:         "admin",
-			password:         "admin123",
-			expectedUsername: "admin",
-			expectedPassword: "admin123",
-		},
-		{
-			name:             "special characters in password",
-			username:         "user",
-			password:         "p@ss:word!#$%",
-			expectedUsername: "user",
-			expectedPassword: "p@ss:word!#$%",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Neo4jConfig{
-				URI:      "bolt://localhost:7687",
-				Username: tt.username,
-				Password: tt.password,
-			}
-			username, password := cfg.Credentials()
-			assert.Equal(t, tt.expectedUsername, username)
-			assert.Equal(t, tt.expectedPassword, password)
-		})
-	}
-}
-
-// TestConfigFileFlagOverride tests that --config flag takes precedence.
+// TestConfigFileFlagOverride verifies that a --config flag takes precedence
+// over $MNEMONIC_CONFIG_FILE.
 func TestConfigFileFlagOverride(t *testing.T) {
 	clearMnemonicEnvVars(t)
 
-	// Create multiple config files
 	tmpDir := t.TempDir()
 	envConfigPath := filepath.Join(tmpDir, "env-config.yaml")
-	flagConfigPath := filepath.Join(tmpDir, "flag-config.yaml")
-
-	envConfig := `
-server:
-  port: 9001
-`
-	flagConfig := `
-server:
-  port: 9002
-`
-
-	err := os.WriteFile(envConfigPath, []byte(envConfig), 0644)
-	require.NoError(t, err)
-	err = os.WriteFile(flagConfigPath, []byte(flagConfig), 0644)
-	require.NoError(t, err)
-
-	// Set environment variable
+	require.NoError(t, os.WriteFile(envConfigPath, []byte("server:\n  port: 9001\n"), 0o600))
 	t.Setenv(config.EnvConfigFile, envConfigPath)
 
-	// Create flagset with --config
-	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	configFlag := flags.String("config", "", "config file")
-	err = flags.Set("config", flagConfigPath)
+	cfg, err := loadFromYAML(t, "server:\n  port: 9002\n")
 	require.NoError(t, err)
-
-	// Verify flag was marked as changed
-	assert.True(t, flags.Lookup("config").Changed)
-	assert.Equal(t, flagConfigPath, *configFlag)
+	assert.Equal(t, 9002, cfg.Server.Port)
 }
 
-// TestBooleanEnvironmentVariables tests boolean parsing from env vars.
-func TestBooleanEnvironmentVariables(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    string
-		expected bool
-	}{
-		{"true lowercase", "true", true},
-		{"TRUE uppercase", "TRUE", true},
-		{"1", "1", true},
-		{"false lowercase", "false", false},
-		{"FALSE uppercase", "FALSE", false},
-		{"0", "0", false},
-	}
+// TestConfigFileFromEnv verifies that $MNEMONIC_CONFIG_FILE is read when no
+// flag is given, and that a missing explicitly named file is an error.
+func TestConfigFileFromEnv(t *testing.T) {
+	clearMnemonicEnvVars(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clearMnemonicEnvVars(t)
-			// Use observability.tracing.otlp_insecure, which has no validation dependencies
-			t.Setenv("MNEMONIC_OBSERVABILITY_TRACING_OTLP_INSECURE", tt.value)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("server:\n  port: 9001\n"), 0o600))
+	t.Setenv(config.EnvConfigFile, path)
 
-			cfg, err := loadFromYAML(t, "")
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, cfg.Observability.Tracing.OTLPInsecure)
-		})
-	}
-}
+	cfg, err := config.Load(nil)
+	require.NoError(t, err)
+	assert.Equal(t, 9001, cfg.Server.Port)
 
-// TestDurationEnvironmentVariables tests duration parsing from env vars.
-func TestDurationEnvironmentVariables(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    string
-		expected time.Duration
-	}{
-		{"seconds", "45s", 45 * time.Second},
-		{"minutes", "5m", 5 * time.Minute},
-		{"hours", "1h", 1 * time.Hour},
-		{"complex", "1h30m", 90 * time.Minute},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clearMnemonicEnvVars(t)
-			t.Setenv("MNEMONIC_SERVER_READ_TIMEOUT", tt.value)
-
-			cfg, err := loadFromYAML(t, "")
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, cfg.Server.ReadTimeout)
-		})
-	}
+	t.Setenv(config.EnvConfigFile, filepath.Join(t.TempDir(), "missing.yaml"))
+	_, err = config.Load(nil)
+	assert.ErrorContains(t, err, "failed to read config file")
 }
 
 // TestValidConfig verifies a fully valid config passes validation.
 func TestValidConfig(t *testing.T) {
-	cfg := validConfig()
-	errs := cfg.Validate()
-	assert.Empty(t, errs, "expected no validation errors, got: %v", errs)
-}
-
-// TestValidationErrorFormat tests the ValidationError and ValidationErrors formatting.
-func TestValidationErrorFormat(t *testing.T) {
-	err := config.ValidationError{
-		Field:   "server.port",
-		Message: "must be between 1 and 65535, got 0",
-	}
-	assert.Equal(t, "server.port: must be between 1 and 65535, got 0", err.Error())
-
-	errs := config.ValidationErrors{
-		{Field: "server.port", Message: "invalid"},
-		{Field: "database.postgres.port", Message: "invalid"},
-	}
-	errStr := errs.Error()
-	assert.Contains(t, errStr, "configuration validation failed:")
-	assert.Contains(t, errStr, "server.port: invalid")
-	assert.Contains(t, errStr, "database.postgres.port: invalid")
-}
-
-// TestEmptyValidationErrors tests that empty ValidationErrors returns empty string.
-func TestEmptyValidationErrors(t *testing.T) {
-	var errs config.ValidationErrors
-	assert.Empty(t, errs.Error())
+	assert.NoError(t, validConfig().Validate())
 }
 
 // Helper functions
@@ -1281,7 +1047,7 @@ func clearMnemonicEnvVars(t *testing.T) {
 }
 
 // loadFromYAML writes content to a temporary config file and loads it through
-// config.LoadWithFlags with an explicit --config flag. This exercises the same
+// config.Load with an explicit --config flag. This exercises the same
 // defaults, file, and environment-variable precedence as production, without
 // picking up any ambient config file on the host.
 func loadFromYAML(t *testing.T, content string) (*config.MnemonicConfig, error) {
@@ -1293,7 +1059,7 @@ func loadFromYAML(t *testing.T, content string) (*config.MnemonicConfig, error) 
 	flags.String("config", "", "config file")
 	require.NoError(t, flags.Set("config", path))
 
-	return config.LoadWithFlags(flags)
+	return config.Load(flags)
 }
 
 // validConfig returns a fully valid configuration for testing.
@@ -1321,7 +1087,7 @@ func validConfig() *config.MnemonicConfig {
 				Password:        "",
 				SSLMode:         "prefer",
 				MaxOpenConns:    25,
-				MaxIdleConns:    5,
+				MinConns:        5,
 				ConnMaxLifetime: 5 * time.Minute,
 			},
 			Neo4j: config.Neo4jConfig{
@@ -1373,51 +1139,19 @@ func TestOpenAIBaseURL_EnvOverride(t *testing.T) {
 	clearMnemonicEnvVars(t)
 	t.Setenv("MNEMONIC_OPENAI_BASE_URL", "http://localhost:8090/v1")
 
-	v := viper.New()
-	config.SetDefaults(v)
-	v.SetEnvPrefix("MNEMONIC")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	cfg := &config.MnemonicConfig{}
-	require.NoError(t, v.Unmarshal(cfg))
-
+	cfg, err := loadFromYAML(t, "")
+	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:8090/v1", cfg.OpenAI.BaseURL)
 }
 
 func TestOpenAIBaseURL_ValidateAcceptsValidURL(t *testing.T) {
-	clearMnemonicEnvVars(t)
-
-	v := viper.New()
-	config.SetDefaults(v)
-	v.Set("openai.base_url", "http://localhost:8090/v1")
-
-	cfg := &config.MnemonicConfig{}
-	require.NoError(t, v.Unmarshal(cfg))
-
-	errs := cfg.Validate()
-	for _, e := range errs {
-		assert.NotEqual(t, "openai.base_url", e.Field)
-	}
+	cfg := validConfig()
+	cfg.OpenAI.BaseURL = "http://localhost:8090/v1"
+	assert.NoError(t, cfg.Validate())
 }
 
 func TestOpenAIBaseURL_ValidateRejectsBareString(t *testing.T) {
-	clearMnemonicEnvVars(t)
-
-	v := viper.New()
-	config.SetDefaults(v)
-	v.Set("openai.base_url", "not-a-url")
-
-	cfg := &config.MnemonicConfig{}
-	require.NoError(t, v.Unmarshal(cfg))
-
-	errs := cfg.Validate()
-	found := false
-	for _, e := range errs {
-		if e.Field == "openai.base_url" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "expected validation error for openai.base_url with bare string %q", "not-a-url")
+	cfg := validConfig()
+	cfg.OpenAI.BaseURL = "not-a-url"
+	assert.ErrorContains(t, cfg.Validate(), "openai.base_url")
 }

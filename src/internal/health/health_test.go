@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/heartbeat/v2"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 )
 
@@ -29,19 +30,19 @@ func (m *mockConnVerifier) VerifyConnectivity(_ context.Context) error {
 	return m.err
 }
 
-// --- Initialize tests ---
-
-func TestInitialize_Success(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{},
-		Neo4jDriver: &mockConnVerifier{},
+// descriptors builds the descriptors with an OpenAI base URL nothing listens
+// on, which keeps the checks off the network.
+func descriptors(pgErr, neo4jErr error) []heartbeat.DependencyDescriptor {
+	return health.Descriptors(health.Dependencies{
+		PGPool:      &mockPinger{err: pgErr},
+		Neo4jDriver: &mockConnVerifier{err: neo4jErr},
+		OpenAI:      config.OpenAIConfig{BaseURL: "http://127.0.0.1:0"},
 	})
+}
 
-	require.NoError(t, err)
+func TestDescriptors(t *testing.T) {
+	descs := descriptors(nil, nil)
 
-	descs := health.Descriptors()
 	require.Len(t, descs, 4)
 	assert.Equal(t, "PostgreSQL", descs[0].Name)
 	assert.Equal(t, "database", descs[0].Type)
@@ -53,172 +54,30 @@ func TestInitialize_Success(t *testing.T) {
 	assert.Equal(t, "external_api", descs[3].Type)
 }
 
-func TestInitialize_NilPGPool(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      nil,
-		Neo4jDriver: &mockConnVerifier{},
-	})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "PostgreSQL pool is nil")
-}
-
-func TestInitialize_NilNeo4jDriver(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{},
-		Neo4jDriver: nil,
-	})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Neo4j driver is nil")
-}
-
-// --- Descriptors before Initialize ---
-
-func TestDescriptors_BeforeInitialize(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-	health.ResetForTest()
-
-	descs := health.Descriptors()
-	assert.Nil(t, descs)
-}
-
 // --- Individual check tests ---
 
-func TestCheckPostgreSQLHealth_NotInitialized(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-	health.ResetForTest()
-
-	result := health.CheckPostgreSQLHealthForTest(context.Background())
-	assert.Equal(t, heartbeat.StatusCritical, result.Status)
-	assert.Contains(t, result.Message, "not initialized")
-}
-
 func TestCheckPostgreSQLHealth_PingSuccess(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: nil},
-		Neo4jDriver: &mockConnVerifier{},
-	})
-	require.NoError(t, err)
-
-	result := health.CheckPostgreSQLHealthForTest(context.Background())
+	result := descriptors(nil, nil)[0].CheckFunc(context.Background())
 	assert.Equal(t, heartbeat.StatusOK, result.Status)
 	assert.Equal(t, "ok", result.Message)
 }
 
 func TestCheckPostgreSQLHealth_PingFailure(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: errors.New("connection refused")},
-		Neo4jDriver: &mockConnVerifier{},
-	})
-	require.NoError(t, err)
-
-	result := health.CheckPostgreSQLHealthForTest(context.Background())
+	result := descriptors(errors.New("connection refused"), nil)[0].CheckFunc(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "ping failed")
 	assert.Contains(t, result.Message, "connection refused")
 }
 
-func TestCheckNeo4jHealth_NotInitialized(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-	health.ResetForTest()
-
-	result := health.CheckNeo4jHealthForTest(context.Background())
-	assert.Equal(t, heartbeat.StatusCritical, result.Status)
-	assert.Contains(t, result.Message, "not initialized")
-}
-
 func TestCheckNeo4jHealth_VerifySuccess(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{},
-		Neo4jDriver: &mockConnVerifier{err: nil},
-	})
-	require.NoError(t, err)
-
-	result := health.CheckNeo4jHealthForTest(context.Background())
+	result := descriptors(nil, nil)[1].CheckFunc(context.Background())
 	assert.Equal(t, heartbeat.StatusOK, result.Status)
 	assert.Equal(t, "ok", result.Message)
 }
 
 func TestCheckNeo4jHealth_VerifyFailure(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{},
-		Neo4jDriver: &mockConnVerifier{err: errors.New("neo4j unreachable")},
-	})
-	require.NoError(t, err)
-
-	result := health.CheckNeo4jHealthForTest(context.Background())
+	result := descriptors(nil, errors.New("neo4j unreachable"))[1].CheckFunc(context.Background())
 	assert.Equal(t, heartbeat.StatusCritical, result.Status)
 	assert.Contains(t, result.Message, "connectivity check failed")
 	assert.Contains(t, result.Message, "neo4j unreachable")
-}
-
-// --- CheckHealth integration tests ---
-
-func TestCheckHealth_AllHealthy(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: nil},
-		Neo4jDriver: &mockConnVerifier{err: nil},
-	})
-	require.NoError(t, err)
-
-	err = health.CheckHealth()
-	assert.NoError(t, err)
-}
-
-func TestCheckHealth_PostgresUnhealthy(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: errors.New("pg down")},
-		Neo4jDriver: &mockConnVerifier{err: nil},
-	})
-	require.NoError(t, err)
-
-	err = health.CheckHealth()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "PostgreSQL")
-}
-
-func TestCheckHealth_Neo4jUnhealthy(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: nil},
-		Neo4jDriver: &mockConnVerifier{err: errors.New("neo4j down")},
-	})
-	require.NoError(t, err)
-
-	err = health.CheckHealth()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Neo4j")
-}
-
-func TestCheckHealth_BothUnhealthy(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{err: errors.New("pg down")},
-		Neo4jDriver: &mockConnVerifier{err: errors.New("neo4j down")},
-	})
-	require.NoError(t, err)
-
-	err = health.CheckHealth()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "PostgreSQL")
-	assert.Contains(t, err.Error(), "Neo4j")
 }

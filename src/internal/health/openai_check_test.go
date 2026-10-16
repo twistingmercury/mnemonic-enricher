@@ -7,10 +7,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/heartbeat/v2"
+	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 )
+
+// embeddingModelCheck returns the embedding-model check for an OpenAI API at
+// baseURL.
+func embeddingModelCheck(baseURL, apiKey, model string) heartbeat.CheckFunc {
+	return health.Descriptors(health.Dependencies{
+		PGPool:      &mockPinger{},
+		Neo4jDriver: &mockConnVerifier{},
+		OpenAI:      config.OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, EmbeddingModel: model},
+	})[2].CheckFunc
+}
 
 func TestOpenAIModelCheck_OK(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,7 +30,7 @@ func TestOpenAIModelCheck_OK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	check := health.OpenAIModelCheckForTest(srv.URL, "sk-test", "text-embedding-3-small")
+	check := embeddingModelCheck(srv.URL, "sk-test", "text-embedding-3-small")
 	result := check(context.Background())
 
 	assert.Equal(t, heartbeat.StatusOK, result.Status)
@@ -34,7 +44,7 @@ func TestOpenAIModelCheck_ErrorStatusIsWarning(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result := health.OpenAIModelCheckForTest(srv.URL, "bad-key", "gpt-4o-mini")(context.Background())
+	result := embeddingModelCheck(srv.URL, "bad-key", "gpt-4o-mini")(context.Background())
 
 	assert.Equal(t, heartbeat.StatusWarning, result.Status)
 	assert.Equal(t, http.StatusUnauthorized, result.StatusCode)
@@ -42,26 +52,16 @@ func TestOpenAIModelCheck_ErrorStatusIsWarning(t *testing.T) {
 }
 
 func TestOpenAIModelCheck_UnreachableIsWarning(t *testing.T) {
-	result := health.OpenAIModelCheckForTest("http://127.0.0.1:0", "sk-test", "gpt-4o-mini")(context.Background())
+	result := embeddingModelCheck("http://127.0.0.1:0", "sk-test", "gpt-4o-mini")(context.Background())
 
 	assert.Equal(t, heartbeat.StatusWarning, result.Status)
 	assert.Equal(t, "request failed", result.Message)
 }
 
-func TestCheckHealth_OpenAIWarningDoesNotFail(t *testing.T) {
-	t.Cleanup(health.ResetForTest)
-
-	err := health.Initialize(health.Dependencies{
-		PGPool:      &mockPinger{},
-		Neo4jDriver: &mockConnVerifier{},
-	})
-	require.NoError(t, err)
-
-	status, results := heartbeat.CheckDependencies(context.Background(), health.Descriptors())
+func TestOpenAIWarningDoesNotFailHealth(t *testing.T) {
+	status, results := heartbeat.CheckDependencies(context.Background(), descriptors(nil, nil))
 	assert.Equal(t, heartbeat.StatusWarning, status)
 	for _, r := range results[2:] {
 		assert.Equal(t, heartbeat.StatusWarning, r.Status, r.Name)
 	}
-
-	assert.NoError(t, health.CheckHealth())
 }

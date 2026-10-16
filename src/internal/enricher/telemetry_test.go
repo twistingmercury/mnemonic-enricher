@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -22,6 +22,7 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/enricher"
 	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	queue "github.com/twistingmercury/mnemonic-enricher/internal/queue"
+	enrichmentjob "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 )
 
@@ -32,19 +33,17 @@ func runOne(t *testing.T, d queue.Delivery, processErr error) metricdata.Resourc
 	job := newTestJob()
 	d.Body = []byte(fmt.Sprintf(`{"job_id":%q}`, job.ID))
 
-	svc := new(mockService)
-	svc.On("StartJob", mock.Anything, job.ID).Return(job, nil)
-	svc.On("ProcessJob", mock.Anything, job).Return(processErr)
-	svc.On("ReclaimStaleJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupCompletedJobs", mock.Anything).Return(int64(0), nil).Maybe()
-	svc.On("CleanupFailedJobs", mock.Anything).Return(int64(0), nil).Maybe()
+	svc := &fakeService{
+		startJob: startsJobs(job),
+		process:  func(context.Context, *enrichmentjob.Job) error { return processErr },
+	}
 
 	reader := sdkmetric.NewManualReader()
 	jm, err := metrics.NewJobs(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("test"))
 	require.NoError(t, err)
 
 	sub := &mockSubscriber{name: "test-queue", deliveries: []queue.Delivery{d}}
-	w := enricher.New(svc, sub, testConfig(1), testLogger(), jm)
+	w := enricher.New(svc, sub, testConfig(1), zerolog.Nop(), jm)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()

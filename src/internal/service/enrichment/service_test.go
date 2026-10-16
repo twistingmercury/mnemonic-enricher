@@ -3,8 +3,6 @@ package enrichment_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -194,17 +192,9 @@ func testChunk() *chunkrepo.Chunk {
 	}
 }
 
-// enrichedEmbedText mirrors the production logic in processChunkJob: when the
-// chunk's pattern has tags they are included as a pipe-separated segment; when
-// the slice is empty the segment is omitted entirely.
-// NOTE: the format strings here are coupled to the ones in processChunkJob.
-func enrichedEmbedText(c *chunkrepo.Chunk) string {
-	if len(c.PatternTags) > 0 {
-		tags := strings.Join(c.PatternTags, ", ")
-		return fmt.Sprintf("%s | %s | %s\n\n%s", c.PatternName, tags, c.SectionTitle, c.Content)
-	}
-	return fmt.Sprintf("%s | %s\n\n%s", c.PatternName, c.SectionTitle, c.Content)
-}
+// testEmbedText is the text processChunkJob embeds for testChunk():
+// "name | tags | section", a blank line, then the content.
+const testEmbedText = "test-pattern | test | Test Section\n\nTest chunk content for embedding."
 
 func testEmbedding() []float32 {
 	return []float32{0.1, 0.2, 0.3}
@@ -244,7 +234,7 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 		chunkRepo:     new(mockChunkRepo),
 	}
 
-	svc, err := enrichment.New(
+	svc := enrichment.New(
 		deps.jobRepo,
 		deps.patternRepo,
 		deps.graphRepo,
@@ -254,7 +244,6 @@ func newTestService(t *testing.T) (enrichment.Service, *testDeps) {
 		deps.chunkRepo,
 		zerolog.Nop(),
 	)
-	require.NoError(t, err)
 
 	return svc, deps
 }
@@ -291,9 +280,9 @@ func setupFailChunkJobMocks(deps *testDeps) {
 
 // setupChunkEnrichedMocks wires a chunk job through load, embed, MarkEnriched
 // and PatternProgress, returning progress and progressErr from the last step.
-func setupChunkEnrichedMocks(deps *testDeps, chunk *chunkrepo.Chunk, progress chunkrepo.Progress, progressErr error) {
+func setupChunkEnrichedMocks(deps *testDeps, chunk *chunkrepo.Chunk, embedText string, progress chunkrepo.Progress, progressErr error) {
 	deps.chunkRepo.On("Get", mock.Anything, testChunkID).Return(chunk, nil)
-	deps.embeddingSvc.On("Embed", mock.Anything, enrichedEmbedText(chunk)).Return(testEmbedding(), nil)
+	deps.embeddingSvc.On("Embed", mock.Anything, embedText).Return(testEmbedding(), nil)
 	deps.chunkRepo.On("MarkEnriched", mock.Anything, testChunkID, testEmbedding()).Return(nil)
 	deps.chunkRepo.On("PatternProgress", mock.Anything, testPatternID).Return(progress, progressErr)
 }
@@ -305,24 +294,6 @@ func assertNoPatternWork(t *testing.T, deps *testDeps) {
 	deps.patternRepo.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
 	deps.extractionSvc.AssertNotCalled(t, "Extract", mock.Anything, mock.Anything)
 	deps.graphRepo.AssertNotCalled(t, "SyncPattern", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-// TestNew_NilChunkRepo verifies that New returns an error when chunkRepo is nil,
-// preventing the misconfiguration from surfacing as a runtime failure.
-func TestNew_NilChunkRepo(t *testing.T) {
-	t.Parallel()
-	_, err := enrichment.New(
-		new(mockJobRepo),
-		new(mockPatternRepo),
-		new(mockGraphRepo),
-		new(mockEmbeddingSvc),
-		new(mockExtractionSvc),
-		testConfig(),
-		nil, // chunkRepo intentionally nil
-		zerolog.Nop(),
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "chunkRepo")
 }
 
 // ---------- StartJob ----------
@@ -525,7 +496,7 @@ func TestProcessJob_ChunkJob_HappyPath_AllEnriched(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{AllEnriched: true}, nil)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{AllEnriched: true}, nil)
 	// Last chunk of the pattern: load the pattern, extract concepts, sync the graph.
 	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(testPattern(), nil)
 	setupGraphMocks(deps)
@@ -542,7 +513,7 @@ func TestProcessJob_ChunkJob_HappyPath_NotAllEnriched(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{}, nil)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{}, nil)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
@@ -561,11 +532,10 @@ func TestProcessJob_ChunkJob_HappyPath_NoTags(t *testing.T) {
 	// the embed text is "name | section\n\ncontent" with no blank segment.
 	chunk := testChunk()
 	chunk.PatternTags = nil
-	expected := enrichedEmbedText(chunk)
-	assert.Equal(t, "test-pattern | Test Section\n\nTest chunk content for embedding.", expected)
+	expected := "test-pattern | Test Section\n\nTest chunk content for embedding."
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, chunk, chunkrepo.Progress{}, nil)
+	setupChunkEnrichedMocks(deps, chunk, expected, chunkrepo.Progress{}, nil)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
@@ -578,7 +548,7 @@ func TestProcessJob_ChunkJob_AnyFailed_PatternMarkedFailed(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{AnyFailed: true}, nil)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{AnyFailed: true}, nil)
 	// Pattern is marked failed; job is still completed (this chunk succeeded).
 	deps.patternRepo.On("UpdateEnrichmentStatus", mock.Anything, testPatternID, "failed", mock.AnythingOfType("*string")).Return(nil)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
@@ -595,7 +565,7 @@ func TestProcessJob_ChunkJob_PatternProgressFails(t *testing.T) {
 
 	// A failed progress query is logged; this chunk's job still completes.
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{}, errDB)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{}, errDB)
 	deps.jobRepo.On("MarkCompleted", mock.Anything, testJobID).Return(nil)
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
@@ -626,7 +596,7 @@ func TestProcessJob_ChunkJob_EmbeddingFails(t *testing.T) {
 	svc, deps := newTestService(t)
 	chunk := testChunk()
 	deps.chunkRepo.On("Get", mock.Anything, testChunkID).Return(chunk, nil)
-	deps.embeddingSvc.On("Embed", mock.Anything, enrichedEmbedText(chunk)).Return(nil, errors.New("openai unavailable"))
+	deps.embeddingSvc.On("Embed", mock.Anything, testEmbedText).Return(nil, errors.New("openai unavailable"))
 	setupFailChunkJobMocks(deps)
 
 	err := svc.ProcessJob(context.Background(), testChunkJob())
@@ -641,7 +611,7 @@ func TestProcessJob_ChunkJob_MarkEnrichedFails(t *testing.T) {
 	svc, deps := newTestService(t)
 	chunk := testChunk()
 	deps.chunkRepo.On("Get", mock.Anything, testChunkID).Return(chunk, nil)
-	deps.embeddingSvc.On("Embed", mock.Anything, enrichedEmbedText(chunk)).Return(testEmbedding(), nil)
+	deps.embeddingSvc.On("Embed", mock.Anything, testEmbedText).Return(testEmbedding(), nil)
 	deps.chunkRepo.On("MarkEnriched", mock.Anything, testChunkID, testEmbedding()).Return(errDB)
 	setupFailChunkJobMocks(deps)
 
@@ -657,7 +627,7 @@ func TestProcessJob_ChunkJob_AllEnriched_LoadPatternFails(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{AllEnriched: true}, nil)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{AllEnriched: true}, nil)
 	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(nil, errDB)
 	// failJob: the job has no PatternID, so only MarkFailed is called.
 	deps.jobRepo.On("MarkFailed", mock.Anything, testJobID, mock.Anything, 30*time.Second).Return(nil)
@@ -673,7 +643,7 @@ func TestProcessJob_ChunkJob_GraphPipelineFails(t *testing.T) {
 	t.Parallel()
 
 	svc, deps := newTestService(t)
-	setupChunkEnrichedMocks(deps, testChunk(), chunkrepo.Progress{AllEnriched: true}, nil)
+	setupChunkEnrichedMocks(deps, testChunk(), testEmbedText, chunkrepo.Progress{AllEnriched: true}, nil)
 	deps.patternRepo.On("Get", mock.Anything, testPatternID).Return(testPattern(), nil)
 	deps.extractionSvc.On("Extract", mock.Anything, testPattern().Content).Return(nil, errors.New("openai down"))
 	// runGraphPipeline calls failJob (not failChunkJob); the chunk job has no

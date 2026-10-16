@@ -37,7 +37,7 @@ type neo4jRepository struct {
 }
 
 // NewRepository creates a new Neo4j-backed Repository. Each operation gets a
-// client span and, when dbMetrics is non-nil, a latency and error recording.
+// client span and a latency and error recording in dbMetrics.
 func NewRepository(driver neo4j.DriverWithContext, database string, dbMetrics *metrics.Database) Repository {
 	return &neo4jRepository{driver: driver, database: database, dbMetrics: dbMetrics}
 }
@@ -61,9 +61,7 @@ func (r *neo4jRepository) instrument(ctx context.Context, op string) (context.Co
 			span.SetStatus(codes.Error, err.Error())
 		}
 		span.End()
-		if r.dbMetrics != nil {
-			r.dbMetrics.RecordQueryWithError(ctx, "neo4j", op, time.Since(start), err)
-		}
+		r.dbMetrics.Record(ctx, "neo4j", op, time.Since(start), err)
 	}
 }
 

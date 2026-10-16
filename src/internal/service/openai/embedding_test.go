@@ -25,6 +25,12 @@ func testEmbeddingConfig() config.OpenAIConfig {
 	}
 }
 
+// withBaseURL points cfg at a test server.
+func withBaseURL(cfg config.OpenAIConfig, url string) config.OpenAIConfig {
+	cfg.BaseURL = url
+	return cfg
+}
+
 func TestEmbed_Success(t *testing.T) {
 	t.Parallel()
 
@@ -32,6 +38,7 @@ func TestEmbed_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/embeddings", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "Bearer test-api-key", r.Header.Get("Authorization"))
 
@@ -55,7 +62,7 @@ func TestEmbed_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewEmbeddingServiceForTest(testEmbeddingConfig(), srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(testEmbeddingConfig(), srv.URL))
 
 	got, err := svc.Embed(context.Background(), "test input text")
 	require.NoError(t, err)
@@ -85,7 +92,7 @@ func TestEmbed_RetryThenSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewEmbeddingServiceForTest(testEmbeddingConfig(), srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(testEmbeddingConfig(), srv.URL))
 
 	got, err := svc.Embed(context.Background(), "retry test")
 	require.NoError(t, err)
@@ -105,7 +112,7 @@ func TestEmbed_AllRetriesExhausted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := openai.NewEmbeddingServiceForTest(testEmbeddingConfig(), srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(testEmbeddingConfig(), srv.URL))
 
 	_, err := svc.Embed(context.Background(), "will fail")
 	require.Error(t, err)
@@ -125,7 +132,7 @@ func TestEmbed_ContextCancellation(t *testing.T) {
 	defer srv.Close()
 	defer close(done)
 
-	svc := openai.NewEmbeddingServiceForTest(testEmbeddingConfig(), srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(testEmbeddingConfig(), srv.URL))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -147,7 +154,7 @@ func TestEmbed_InvalidJSONResponse(t *testing.T) {
 
 	cfg := testEmbeddingConfig()
 	cfg.RetryAttempts = 0
-	svc := openai.NewEmbeddingServiceForTest(cfg, srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(cfg, srv.URL))
 
 	_, err := svc.Embed(context.Background(), "bad json")
 	require.Error(t, err)
@@ -165,7 +172,7 @@ func TestEmbed_EmptyDataResponse(t *testing.T) {
 
 	cfg := testEmbeddingConfig()
 	cfg.RetryAttempts = 0
-	svc := openai.NewEmbeddingServiceForTest(cfg, srv.URL)
+	svc := openai.NewEmbeddingService(withBaseURL(cfg, srv.URL))
 
 	_, err := svc.Embed(context.Background(), "empty response")
 	require.Error(t, err)

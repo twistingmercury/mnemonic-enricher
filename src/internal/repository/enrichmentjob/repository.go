@@ -102,8 +102,7 @@ func (r *pgxRepository) ClaimDue(ctx context.Context, grace time.Duration, limit
 		RETURNING id, pattern_id, chunk_id
 	`
 
-	graceInterval := fmt.Sprintf("%d seconds", int(grace.Seconds()))
-	rows, err := r.db.Query(ctx, query, string(StatusProcessing), string(StatusPending), graceInterval, limit)
+	rows, err := r.db.Query(ctx, query, string(StatusProcessing), string(StatusPending), grace, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim due jobs: %w", err)
 	}
@@ -150,13 +149,6 @@ func (r *pgxRepository) MarkCompleted(ctx context.Context, id uuid.UUID) error {
 // If attempts >= max_attempts, the job remains in failed state.
 // Uses SQL now() for timestamps to ensure consistency with database time.
 func (r *pgxRepository) MarkFailed(ctx context.Context, id uuid.UUID, jobErr error, retryDelay time.Duration) error {
-	// Use *string nil for empty error to set NULL in database
-	var errMsg *string
-	if jobErr != nil {
-		msg := jobErr.Error()
-		errMsg = &msg
-	}
-
 	// Single atomic UPDATE with CASE expression:
 	// - Atomically increments attempts
 	// - Sets status to 'pending' if retrying, 'failed' if max attempts reached
@@ -173,15 +165,12 @@ func (r *pgxRepository) MarkFailed(ctx context.Context, id uuid.UUID, jobErr err
 		WHERE id = $1
 	`
 
-	// Convert retryDelay to PostgreSQL interval string
-	delayInterval := fmt.Sprintf("%d seconds", int(retryDelay.Seconds()))
-
 	result, err := r.db.Exec(ctx, query,
 		id,
 		string(StatusPending),
 		string(StatusFailed),
-		errMsg,
-		delayInterval,
+		jobErr.Error(),
+		retryDelay,
 	)
 	if err != nil {
 		return fmt.Errorf("mark job failed: %w", err)
@@ -199,9 +188,6 @@ func (r *pgxRepository) MarkFailed(ctx context.Context, id uuid.UUID, jobErr err
 // Increments attempt count so jobs that consistently timeout respect max_attempts.
 // Uses SQL now() for timestamps to ensure consistency with database time.
 func (r *pgxRepository) ReclaimStale(ctx context.Context, timeout time.Duration) (int64, error) {
-	// Convert timeout to PostgreSQL interval string
-	timeoutInterval := fmt.Sprintf("%d seconds", int(timeout.Seconds()))
-
 	// Reclaim stale jobs:
 	// - Only reclaim jobs where attempts + 1 < max_attempts (can still retry)
 	// - Increment attempts to track timeout as a failed attempt
@@ -220,7 +206,7 @@ func (r *pgxRepository) ReclaimStale(ctx context.Context, timeout time.Duration)
 		string(StatusPending),
 		string(StatusFailed),
 		string(StatusProcessing),
-		timeoutInterval,
+		timeout,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("reclaim stale jobs: %w", err)

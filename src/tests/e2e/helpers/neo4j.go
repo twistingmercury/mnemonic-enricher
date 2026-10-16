@@ -2,7 +2,6 @@ package helpers
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,22 +15,9 @@ import (
 func NewNeo4jDriver(t *testing.T) neo4j.DriverWithContext {
 	t.Helper()
 
-	uri := os.Getenv("NEO4J_URI")
-	if uri == "" {
-		uri = "bolt://localhost:7687"
-	}
-
-	user := os.Getenv("NEO4J_USER")
-	if user == "" {
-		user = "neo4j"
-	}
-
-	password := os.Getenv("NEO4J_PASSWORD")
-	if password == "" {
-		password = "mnemonic_dev"
-	}
-
-	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(user, password, ""))
+	driver, err := neo4j.NewDriverWithContext(
+		envOr("NEO4J_URI", "bolt://localhost:7687"),
+		neo4j.BasicAuth(envOr("NEO4J_USER", "neo4j"), envOr("NEO4J_PASSWORD", "mnemonic_dev"), ""))
 	if err != nil {
 		t.Fatalf("failed to create neo4j driver: %v", err)
 	}
@@ -44,24 +30,32 @@ func NewNeo4jDriver(t *testing.T) neo4j.DriverWithContext {
 	return driver
 }
 
-// AssertPatternNodeExists asserts that a Pattern node with the given ID exists in Neo4j.
-// Calls t.Fatal if no node is found.
-func AssertPatternNodeExists(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
+// countForPattern runs a read query, bound to the pattern's ID as $id, and
+// returns how many records it produced. Calls t.Fatal on error.
+func countForPattern(t *testing.T, driver neo4j.DriverWithContext, cypher string, patternID uuid.UUID) int {
 	t.Helper()
 
 	result, err := neo4j.ExecuteQuery(
 		context.Background(),
 		driver,
-		"MATCH (p:Pattern {id: $id}) RETURN p",
+		cypher,
 		map[string]any{"id": patternID.String()},
 		neo4j.EagerResultTransformer,
 		neo4j.ExecuteQueryWithReadersRouting(),
 	)
 	if err != nil {
-		t.Fatalf("failed to query pattern node %s: %v", patternID, err)
+		t.Fatalf("failed to query graph for pattern %s: %v", patternID, err)
 	}
+	return len(result.Records)
+}
 
-	if len(result.Records) == 0 {
+const patternNodeCypher = "MATCH (p:Pattern {id: $id}) RETURN p"
+
+// AssertPatternNodeExists asserts that a Pattern node with the given ID exists in Neo4j.
+// Calls t.Fatal if no node is found.
+func AssertPatternNodeExists(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
+	t.Helper()
+	if countForPattern(t, driver, patternNodeCypher, patternID) == 0 {
 		t.Fatalf("expected Pattern node with id %s to exist in Neo4j, but none found", patternID)
 	}
 }
@@ -71,20 +65,7 @@ func AssertPatternNodeExists(t *testing.T, driver neo4j.DriverWithContext, patte
 // Calls t.Fatal if no concept nodes are found.
 func AssertConceptNodesExist(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
 	t.Helper()
-
-	result, err := neo4j.ExecuteQuery(
-		context.Background(),
-		driver,
-		"MATCH (c:Concept)-[:MENTIONED_IN]->(p:Pattern {id: $id}) RETURN c",
-		map[string]any{"id": patternID.String()},
-		neo4j.EagerResultTransformer,
-		neo4j.ExecuteQueryWithReadersRouting(),
-	)
-	if err != nil {
-		t.Fatalf("failed to query concept nodes for pattern %s: %v", patternID, err)
-	}
-
-	if len(result.Records) == 0 {
+	if countForPattern(t, driver, "MATCH (c:Concept)-[:MENTIONED_IN]->(p:Pattern {id: $id}) RETURN c", patternID) == 0 {
 		t.Fatalf("expected at least one Concept node MENTIONED_IN Pattern %s, but none found", patternID)
 	}
 }
@@ -93,20 +74,7 @@ func AssertConceptNodesExist(t *testing.T, driver neo4j.DriverWithContext, patte
 // Calls t.Fatal if a node IS found.
 func AssertPatternNodeNotExists(t *testing.T, driver neo4j.DriverWithContext, patternID uuid.UUID) {
 	t.Helper()
-
-	result, err := neo4j.ExecuteQuery(
-		context.Background(),
-		driver,
-		"MATCH (p:Pattern {id: $id}) RETURN p",
-		map[string]any{"id": patternID.String()},
-		neo4j.EagerResultTransformer,
-		neo4j.ExecuteQueryWithReadersRouting(),
-	)
-	if err != nil {
-		t.Fatalf("failed to query pattern node %s: %v", patternID, err)
-	}
-
-	if len(result.Records) != 0 {
+	if countForPattern(t, driver, patternNodeCypher, patternID) != 0 {
 		t.Fatalf("expected no Pattern node with id %s in Neo4j, but one was found", patternID)
 	}
 }

@@ -4,27 +4,52 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
 )
 
+// mustParseFlags parses args with the production flag set.
+func mustParseFlags(t *testing.T, args ...string) *pflag.FlagSet {
+	t.Helper()
+	flags, err := parseFlags(args)
+	require.NoError(t, err)
+	return flags
+}
+
 func TestResolveServerPort_Default(t *testing.T) {
 	// Cannot use t.Parallel with t.Setenv.
 	t.Setenv("MNEMONIC_SERVER_PORT", "")
 
-	port := resolveServerPort()
+	port, err := resolveServerPort(mustParseFlags(t))
+	require.NoError(t, err)
 	assert.Equal(t, config.DefaultServerPort, port)
 }
 
 func TestResolveServerPort_EnvOverride(t *testing.T) {
 	t.Setenv("MNEMONIC_SERVER_PORT", "9999")
 
-	port := resolveServerPort()
+	port, err := resolveServerPort(mustParseFlags(t))
+	require.NoError(t, err)
 	assert.Equal(t, 9999, port)
+}
+
+// TestResolveServerPort_ConfigFile verifies the probe reads the port from the
+// same config file the server would load.
+func TestResolveServerPort_ConfigFile(t *testing.T) {
+	t.Setenv("MNEMONIC_SERVER_PORT", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("server:\n  port: 8181\n"), 0o600))
+
+	port, err := resolveServerPort(mustParseFlags(t, "--config", path))
+	require.NoError(t, err)
+	assert.Equal(t, 8181, port)
 }
 
 func TestFormatHealthStatus_ValidJSON(t *testing.T) {
@@ -68,11 +93,9 @@ func TestCheckHealth_Healthy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Extract port from test server address.
-	port := extractPort(t, srv.URL)
-	t.Setenv("MNEMONIC_SERVER_PORT", port)
+	t.Setenv("MNEMONIC_SERVER_PORT", serverPort(t, srv))
 
-	exitCode := checkHealth()
+	exitCode := checkHealth(mustParseFlags(t))
 	assert.Equal(t, 0, exitCode)
 }
 
@@ -91,10 +114,9 @@ func TestCheckHealth_Unhealthy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	port := extractPort(t, srv.URL)
-	t.Setenv("MNEMONIC_SERVER_PORT", port)
+	t.Setenv("MNEMONIC_SERVER_PORT", serverPort(t, srv))
 
-	exitCode := checkHealth()
+	exitCode := checkHealth(mustParseFlags(t))
 	assert.Equal(t, 1, exitCode)
 }
 
@@ -102,23 +124,22 @@ func TestCheckHealth_Unreachable(t *testing.T) {
 	// Use a port where nothing is listening.
 	t.Setenv("MNEMONIC_SERVER_PORT", "1")
 
-	exitCode := checkHealth()
+	exitCode := checkHealth(mustParseFlags(t))
 	assert.Equal(t, 1, exitCode)
 }
 
 func TestCheckHealth_BadPort(t *testing.T) {
 	t.Setenv("MNEMONIC_SERVER_PORT", "not_a_number")
 
-	// viper.GetInt returns 0 for non-numeric values, which is an invalid port.
-	// The HTTP request to localhost:0 will fail, producing exit code 1.
-	exitCode := checkHealth()
+	// A non-numeric port is rejected when it is decoded, producing exit code 1.
+	exitCode := checkHealth(mustParseFlags(t))
 	assert.Equal(t, 1, exitCode)
 }
 
-// extractPort parses "http://127.0.0.1:PORT" and returns "PORT" as a string.
-func extractPort(t *testing.T, rawURL string) string {
+// serverPort returns the port of a test server.
+func serverPort(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
-	parts := strings.Split(rawURL, ":")
-	require.Len(t, parts, 3, "expected URL with scheme:host:port")
-	return parts[2]
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	return u.Port()
 }

@@ -44,33 +44,17 @@ func NewDatabase(meter metric.Meter) (*Database, error) {
 	}, nil
 }
 
-// RecordQuery records a database query with its latency and operation type.
-// The operation parameter identifies the type of query (e.g., "select", "insert", "update").
-// Both database and operation should be predefined values with bounded cardinality.
-// Do not use user-provided or dynamic values to avoid metric explosion.
-func (m *Database) RecordQuery(ctx context.Context, database, operation string, duration time.Duration) {
-	m.queryLatency.Record(ctx, milliseconds(duration), metric.WithAttributes(
+// Record records a database query's latency and, when err is non-nil, counts
+// it as an error. Both database and operation should be predefined values
+// with bounded cardinality; do not use user-provided or dynamic values.
+func (m *Database) Record(ctx context.Context, database, operation string, duration time.Duration, err error) {
+	attrs := metric.WithAttributes(
 		attribute.String("database", database),
 		attribute.String("operation", operation),
-	))
-}
-
-// RecordError records a database query error.
-// Both database and operation should be predefined values with bounded cardinality.
-// Do not use user-provided or dynamic values to avoid metric explosion.
-func (m *Database) RecordError(ctx context.Context, database, operation string) {
-	m.queryErrors.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("database", database),
-		attribute.String("operation", operation),
-	))
-}
-
-// RecordQueryWithError records a database query, including an error if one occurred.
-// This is a convenience method for recording both latency and potential errors.
-func (m *Database) RecordQueryWithError(ctx context.Context, database, operation string, duration time.Duration, err error) {
-	m.RecordQuery(ctx, database, operation, duration)
+	)
+	m.queryLatency.Record(ctx, milliseconds(duration), attrs)
 	if err != nil {
-		m.RecordError(ctx, database, operation)
+		m.queryErrors.Add(ctx, 1, attrs)
 	}
 }
 

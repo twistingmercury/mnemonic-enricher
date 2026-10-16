@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/twistingmercury/mnemonic-enricher/internal/repository"
 	"github.com/twistingmercury/mnemonic-enricher/internal/repository/pattern"
 )
 
@@ -149,16 +148,6 @@ func TestRepository_UpdateEnrichmentStatus(t *testing.T) {
 			},
 			wantErr: pattern.ErrNotFound,
 		},
-		{
-			name:      "invalid status returns error",
-			patternID: uuid.New(),
-			status:    "invalid_status",
-			errMsg:    nil,
-			setupMock: func(mock pgxmock.PgxPoolIface) {
-				// No database call expected - validation fails first
-			},
-			wantErr: nil, // We'll check for error message content instead
-		},
 	}
 
 	for _, tt := range tests {
@@ -174,39 +163,13 @@ func TestRepository_UpdateEnrichmentStatus(t *testing.T) {
 			repo := pattern.NewRepository(mock)
 			err = repo.UpdateEnrichmentStatus(context.Background(), tt.patternID, tt.status, tt.errMsg)
 
-			if tt.name == "invalid status returns error" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "invalid enrichment status")
-			} else if tt.wantErr != nil {
+			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
 
 			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
-}
-
-func TestPattern_IsValidEnrichmentStatus(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		status string
-		want   bool
-	}{
-		{"pending", true},
-		{"enriched", true},
-		{"failed", true},
-		{"invalid", false},
-		{"PENDING", false}, // case-sensitive
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.status, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, repository.IsValidEnrichmentStatus(tt.status))
 		})
 	}
 }

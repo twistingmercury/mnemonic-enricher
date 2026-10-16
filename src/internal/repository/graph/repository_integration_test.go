@@ -12,7 +12,9 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/metric/noop"
 
+	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
 	"github.com/twistingmercury/mnemonic-enricher/internal/repository/graph"
 )
 
@@ -43,7 +45,9 @@ func setupNeo4j(t *testing.T) (neo4j.DriverWithContext, graph.Repository) {
 	}
 	t.Cleanup(func() { _ = driver.Close(context.Background()) })
 
-	return driver, graph.NewRepository(driver, envOr("NEO4J_DATABASE", "neo4j"), nil)
+	dbMetrics, err := metrics.NewDatabase(noop.NewMeterProvider().Meter("test"))
+	require.NoError(t, err)
+	return driver, graph.NewRepository(driver, envOr("NEO4J_DATABASE", "neo4j"), dbMetrics)
 }
 
 func query(t *testing.T, driver neo4j.DriverWithContext, cypher string, params map[string]any) []*neo4j.Record {

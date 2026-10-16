@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/twistingmercury/mnemonic-enricher/internal/config"
@@ -20,7 +23,6 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/handlers/operations"
 	"github.com/twistingmercury/mnemonic-enricher/internal/health"
 	"github.com/twistingmercury/mnemonic-enricher/internal/metrics"
-	"github.com/twistingmercury/mnemonic-enricher/internal/middleware"
 	rabbitmq "github.com/twistingmercury/mnemonic-enricher/internal/queue/rabbitmq"
 	chunkrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/chunk"
 	enrichmentjobrepo "github.com/twistingmercury/mnemonic-enricher/internal/repository/enrichmentjob"
@@ -31,6 +33,7 @@ import (
 	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
 	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 	otelxgin "github.com/twistingmercury/otelx/middleware/gin/v2"
+	"github.com/twistingmercury/otelx/v2"
 )
 
 // ListenAndServe starts the mnemonic server. It initializes telemetry,
@@ -46,14 +49,13 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize telemetry: %w", err)
 	}
+	logger := tel.Logger
 	defer func() {
-		logger := tel.Logger()
 		if shutdownErr := tel.Shutdown(context.Background()); shutdownErr != nil {
 			logger.Error().Err(shutdownErr).Msg("telemetry shutdown error")
 		}
 	}()
 
-	logger := tel.Logger()
 	logger.Info().
 		Str("host", cfg.Server.Host).
 		Int("admin_port", cfg.Server.Port).
@@ -68,30 +70,19 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	}
 	defer closeDatabases(pgPool, neo4jDriver, logger)
 
-	// Initialize health checks with real database connections.
-	if err := health.Initialize(health.Dependencies{
-		PGPool:      pgPool,
-		Neo4jDriver: neo4jDriver,
-		OpenAI:      cfg.OpenAI,
-	}); err != nil {
-		return fmt.Errorf("failed to initialize health checks: %w", err)
-	}
-
 	// Wire all dependencies.
-	enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger, tel.MetricsRegistry())
+	enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to wire dependencies: %w", err)
 	}
 
-	// Create request metrics middleware.
-	requestMetrics, err := middleware.NewRequestMetrics(tel.Meter("mnemonic/http"))
-	if err != nil {
-		return fmt.Errorf("failed to create request metrics: %w", err)
-	}
-
 	// Build the Admin API router.
-	router := setupRouter(tel, requestMetrics)
-	operations.SetupHandlers(router, health.Descriptors())
+	router := setupRouter(tel)
+	operations.SetupHandlers(router, health.Descriptors(health.Dependencies{
+		PGPool:      pgPool,
+		Neo4jDriver: neo4jDriver,
+		OpenAI:      cfg.OpenAI,
+	}))
 
 	// Build the Admin API HTTP server.
 	adminServer := CreateHTTPServer(router, cfg)
@@ -100,7 +91,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return runHTTPServer(gCtx, adminServer, cfg, logger, "admin_api")
+		return runHTTPServer(gCtx, adminServer, cfg, logger)
 	})
 
 	g.Go(func() error {
@@ -166,12 +157,22 @@ func wireDependencies(
 	neo4jDriver neo4j.DriverWithContext,
 	cfg *config.MnemonicConfig,
 	logger zerolog.Logger,
-	registry *metrics.Registry,
 ) (*enricher.Worker, error) {
+	// otelx sets the global meter provider when metrics are enabled.
+	meter := otel.Meter("mnemonic")
+	jobMetrics, err := metrics.NewJobs(meter)
+	if err != nil {
+		return nil, fmt.Errorf("job metrics: %w", err)
+	}
+	dbMetrics, err := metrics.NewDatabase(meter)
+	if err != nil {
+		return nil, fmt.Errorf("database metrics: %w", err)
+	}
+
 	// Repositories.
 	patternRepo := patternrepo.NewRepository(pgPool)
 	enrichmentJobRepo := enrichmentjobrepo.NewRepository(pgPool)
-	graphRepo := graphrepo.NewRepository(neo4jDriver, cfg.Database.Neo4j.Database, registry.Database)
+	graphRepo := graphrepo.NewRepository(neo4jDriver, cfg.Database.Neo4j.Database, dbMetrics)
 	chunkRepo := chunkrepo.NewRepository(pgPool)
 
 	// External services.
@@ -179,33 +180,20 @@ func wireDependencies(
 	extractionSvc := openaisvc.NewExtractionService(cfg.OpenAI)
 
 	// Enrichment service.
-	enrichmentSvc, err := enrichmentsvc.New(
+	enrichmentSvc := enrichmentsvc.New(
 		enrichmentJobRepo, patternRepo, graphRepo,
 		embeddingSvc, extractionSvc,
 		cfg.Enrichment, chunkRepo, logger,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("wire enrichment service: %w", err)
-	}
 
 	// Queue subscriber.
 	switch cfg.Queue.Provider {
 	case "rabbitmq":
-		rmqCfg := rabbitmq.RabbitMQConfig{
-			Host:           cfg.Queue.RabbitMQ.Host,
-			Port:           cfg.Queue.RabbitMQ.Port,
-			User:           cfg.Queue.RabbitMQ.User,
-			Password:       cfg.Queue.RabbitMQ.Password,
-			VHost:          cfg.Queue.RabbitMQ.VHost,
-			Queue:          cfg.Queue.RabbitMQ.Queue,
-			PrefetchCount:  cfg.Queue.RabbitMQ.PrefetchCount,
-			ReconnectDelay: cfg.Queue.RabbitMQ.ReconnectDelay,
-		}
-		rmqSub, subErr := rabbitmq.NewSubscriber(rmqCfg)
+		rmqSub, subErr := rabbitmq.NewSubscriber(cfg.Queue.RabbitMQ)
 		if subErr != nil {
 			return nil, fmt.Errorf("wire queue subscriber: %w", subErr)
 		}
-		return enricher.New(enrichmentSvc, rmqSub, cfg.Enrichment, logger, registry.Jobs), nil
+		return enricher.New(enrichmentSvc, rmqSub, cfg.Enrichment, logger, jobMetrics), nil
 	default:
 		return nil, fmt.Errorf("unknown queue provider: %q", cfg.Queue.Provider)
 	}
@@ -213,13 +201,13 @@ func wireDependencies(
 
 // runHTTPServer starts the admin API HTTP server and gracefully shuts it down
 // when the context is cancelled.
-func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicConfig, logger zerolog.Logger, name string) error {
+func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicConfig, logger zerolog.Logger) error {
 	errCh := make(chan error, 1)
 
 	go func() {
 		logger.Info().
 			Str("addr", srv.Addr).
-			Str("component", name).
+			Str("component", "admin_api").
 			Msg("HTTP server listening")
 
 		var err error
@@ -229,7 +217,7 @@ func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicCo
 			err = srv.ListenAndServe()
 		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("%s server error: %w", name, err)
+			errCh <- fmt.Errorf("admin_api server error: %w", err)
 		}
 		close(errCh)
 	}()
@@ -243,15 +231,19 @@ func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicCo
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
-	logger.Info().Str("component", name).Msg("shutting down HTTP server")
+	logger.Info().Str("component", "admin_api").Msg("shutting down HTTP server")
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("%s shutdown error: %w", name, err)
+		return fmt.Errorf("admin_api shutdown error: %w", err)
 	}
 	return nil
 }
 
+// skipPaths are the routes left out of tracing, HTTP metrics and request
+// logs: health probes would otherwise drown out real traffic.
+var skipPaths = []string{"/health"}
+
 // setupRouter creates and configures the Gin router with middleware.
-func setupRouter(tel *telemetry.Telemetry, requestMetrics *middleware.RequestMetrics) *gin.Engine {
+func setupRouter(tel *otelx.Telemetry) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid duplicate logging
 	router := gin.New()
 
@@ -266,20 +258,18 @@ func setupRouter(tel *telemetry.Telemetry, requestMetrics *middleware.RequestMet
 		c.Next()
 	})
 
-	// Use exported DefaultSkipPaths from middleware package
-	skipPaths := middleware.DefaultSkipPaths
-
-	// Tracing middleware using otelgin
-	router.Use(middleware.TracingMiddlewareWithSkipPaths(version.Service, skipPaths))
-
-	// otelx logging middleware with trace correlation
-	router.Use(otelxgin.LoggingMiddleware(tel.Otelx(),
-		otelxgin.WithSkipPaths("/health", "/metrics"),
-		otelxgin.WithRequestHeaders("X-Request-ID", "X-Correlation-ID"),
+	// Tracing and semconv HTTP metrics, through the global providers.
+	router.Use(otelgin.Middleware(version.Service,
+		otelgin.WithFilter(func(req *http.Request) bool {
+			return !slices.Contains(skipPaths, req.URL.Path)
+		}),
 	))
 
-	// Request metrics middleware
-	router.Use(requestMetrics.MiddlewareWithSkipPaths(skipPaths))
+	// otelx logging middleware with trace correlation
+	router.Use(otelxgin.LoggingMiddleware(tel,
+		otelxgin.WithSkipPaths(skipPaths...),
+		otelxgin.WithRequestHeaders("X-Request-ID", "X-Correlation-ID"),
+	))
 
 	return router
 }

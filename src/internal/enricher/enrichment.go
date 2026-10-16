@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -55,8 +54,8 @@ type Worker struct {
 
 // New creates a Worker that processes enrichment jobs using svc, consuming
 // messages from sub, configured by cfg. The logger is used for structured
-// logging of worker lifecycle events and errors. jobMetrics, when non-nil,
-// records the count and duration of every handled delivery.
+// logging of worker lifecycle events and errors. jobMetrics records the
+// count and duration of every handled delivery.
 func New(svc enrichmentsvc.Service, sub queue.Subscriber, cfg config.EnrichmentConfig, logger zerolog.Logger, jobMetrics *metrics.Jobs) *Worker {
 	return &Worker{
 		svc:        svc,
@@ -88,27 +87,17 @@ func (w *Worker) Run(ctx context.Context) error {
 	drainCtx, drainCancel := context.WithCancel(context.Background())
 	defer drainCancel()
 
-	// inflight tracks the number of currently executing handleDelivery calls
-	// so Run can wait for them during the drain phase.
+	// inflight tracks the currently executing job handlers so Run can wait
+	// for them during the drain phase.
 	var inflight sync.WaitGroup
 
-	// allDone tracks all goroutines (delivery handlers + maintenance) so Run
-	// can wait for everything to finish before returning.
-	var allDone sync.WaitGroup
-
-	// semaphore limits the number of concurrently executing delivery handlers.
+	// semaphore limits the number of concurrently executing job handlers.
 	semaphore := make(chan struct{}, w.cfg.WorkerCount)
 
-	deliveries, err := w.sub.Subscribe(ctx)
-	if err != nil {
-		return fmt.Errorf("enrichment worker: subscribe: %w", err)
-	}
+	deliveries := w.sub.Subscribe(ctx)
 
-	allDone.Add(1)
-	go func() {
-		defer allDone.Done()
-		w.runMaintenance(ctx)
-	}()
+	var maintenance sync.WaitGroup
+	maintenance.Go(func() { w.runMaintenance(ctx) })
 
 	w.logger.Info().
 		Int("worker_count", w.cfg.WorkerCount).
@@ -120,16 +109,10 @@ func (w *Worker) Run(ctx context.Context) error {
 	// gets drainCtx so it can finish after ctx is cancelled.
 	dispatch := func(work func(context.Context)) {
 		semaphore <- struct{}{}
-		inflight.Add(1)
-		allDone.Add(1)
-		go func() {
-			defer func() {
-				<-semaphore
-				inflight.Done()
-				allDone.Done()
-			}()
+		inflight.Go(func() {
+			defer func() { <-semaphore }()
 			work(drainCtx)
-		}()
+		})
 	}
 
 	sweep := time.NewTicker(w.retryInterval)
@@ -161,20 +144,29 @@ loop:
 		}
 	}
 
-	// Drain phase: wait for in-flight handleDelivery calls to complete, bounded
-	// by the drain timeout.
+	// Drain phase: wait for in-flight jobs to complete. If they do not finish
+	// within the drain timeout, drainCancel cancels their context and Run
+	// waits for them to return.
 	w.logger.Info().
 		Dur("drain_timeout", w.cfg.DrainTimeout).
 		Msg("draining in-flight jobs")
 
-	w.drainInFlight(&inflight, drainCancel)
+	timeout := time.AfterFunc(w.cfg.DrainTimeout, func() {
+		w.logger.Warn().
+			Dur("drain_timeout", w.cfg.DrainTimeout).
+			Msg("drain timeout expired, cancelling in-flight jobs")
+		drainCancel()
+	})
+	inflight.Wait()
+	if timeout.Stop() {
+		w.logger.Info().Msg("all in-flight jobs drained successfully")
+	}
 
 	if err := w.sub.Close(); err != nil {
 		w.logger.Error().Err(err).Msg("error closing subscriber")
 	}
 
-	// Wait for all goroutines (maintenance + delivery handlers) to exit.
-	allDone.Wait()
+	maintenance.Wait()
 
 	w.logger.Info().Msg("enrichment worker stopped")
 	return nil
@@ -317,32 +309,7 @@ func (w *Worker) finish(ctx context.Context, span trace.Span, err error, outcome
 		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End()
-	if w.jobMetrics != nil {
-		w.jobMetrics.Record(ctx, outcome, time.Since(start))
-	}
-}
-
-// drainInFlight waits for all in-flight handleDelivery calls tracked by wg to
-// complete. If they do not finish within cfg.DrainTimeout, drainCancel is
-// called to cancel the drain context, forcing in-flight calls to abort.
-func (w *Worker) drainInFlight(wg *sync.WaitGroup, drainCancel context.CancelFunc) {
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		w.logger.Info().Msg("all in-flight jobs drained successfully")
-	case <-time.After(w.cfg.DrainTimeout):
-		w.logger.Warn().
-			Dur("drain_timeout", w.cfg.DrainTimeout).
-			Msg("drain timeout expired, cancelling in-flight jobs")
-		drainCancel()
-		// Wait for goroutines to finish after cancellation.
-		<-done
-	}
+	w.jobMetrics.Record(ctx, outcome, time.Since(start))
 }
 
 // runMaintenance periodically reclaims stale jobs and cleans up old
