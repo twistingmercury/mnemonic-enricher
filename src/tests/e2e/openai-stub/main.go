@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"sync/atomic"
 )
 
-var failNext int32
+// failNext is how many more embeddings requests should fail. It may go
+// negative; only a positive count before a request fails it.
+var failNext atomic.Int32
 
 func requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	if r.Header.Get("Authorization") == "" {
@@ -19,15 +20,10 @@ func requireAuth(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.NotFound(w, r)
-		return
-	}
 	if !requireAuth(w, r) {
 		return
 	}
-	if current := atomic.LoadInt32(&failNext); current > 0 {
-		atomic.AddInt32(&failNext, -1)
+	if failNext.Add(-1) >= 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"forced failure"}`))
@@ -71,10 +67,6 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.NotFound(w, r)
-		return
-	}
 	if !requireAuth(w, r) {
 		return
 	}
@@ -109,16 +101,12 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 // handleModel answers the health check's model lookup (GET /v1/models/{model}).
 func handleModel(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
 	if !requireAuth(w, r) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{
-		"id":     strings.TrimPrefix(r.URL.Path, "/v1/models/"),
+		"id":     r.PathValue("model"),
 		"object": "model",
 	}); err != nil {
 		log.Printf("model encode error: %v", err)
@@ -126,20 +114,16 @@ func handleModel(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleFailNext(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.NotFound(w, r)
-		return
-	}
-	atomic.StoreInt32(&failNext, 10)
+	failNext.Store(10)
 	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/embeddings", handleEmbeddings)
-	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
-	mux.HandleFunc("/v1/models/", handleModel)
-	mux.HandleFunc("/control/fail-next", handleFailNext)
+	mux.HandleFunc("POST /v1/embeddings", handleEmbeddings)
+	mux.HandleFunc("POST /v1/chat/completions", handleChatCompletions)
+	mux.HandleFunc("GET /v1/models/{model}", handleModel)
+	mux.HandleFunc("POST /control/fail-next", handleFailNext)
 
 	log.Println("OpenAI stub listening on :8090")
 	if err := http.ListenAndServe(":8090", mux); err != nil {
