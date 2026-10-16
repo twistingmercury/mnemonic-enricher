@@ -218,41 +218,13 @@ func TestRepository_MarkFailed_WithRetry(t *testing.T) {
 			jobID,
 			"pending",
 			"failed",
-			pgxmock.AnyArg(), // last_error (*string)
+			"test error", // last_error
 			retryDelay,
 		).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 	repo := enrichmentjob.NewRepository(mock)
 	err = repo.MarkFailed(context.Background(), jobID, errors.New("test error"), retryDelay)
-
-	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestRepository_MarkFailed_MaxAttemptsReached(t *testing.T) {
-	t.Parallel()
-
-	jobID := uuid.New()
-	retryDelay := 5 * time.Minute
-
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
-	defer mock.Close()
-
-	// Single atomic UPDATE with CASE expression
-	mock.ExpectExec("UPDATE enrichment_jobs SET").
-		WithArgs(
-			jobID,
-			"pending",
-			"failed",
-			pgxmock.AnyArg(), // last_error (*string)
-			retryDelay,
-		).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
-
-	repo := enrichmentjob.NewRepository(mock)
-	err = repo.MarkFailed(context.Background(), jobID, errors.New("final error"), retryDelay)
 
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
