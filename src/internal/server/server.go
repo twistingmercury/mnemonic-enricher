@@ -70,15 +70,6 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	}
 	defer closeDatabases(pgPool, neo4jDriver, logger)
 
-	// Initialize health checks with real database connections.
-	if err := health.Initialize(health.Dependencies{
-		PGPool:      pgPool,
-		Neo4jDriver: neo4jDriver,
-		OpenAI:      cfg.OpenAI,
-	}); err != nil {
-		return fmt.Errorf("failed to initialize health checks: %w", err)
-	}
-
 	// Wire all dependencies.
 	enrichWorker, err := wireDependencies(pgPool, neo4jDriver, cfg, logger)
 	if err != nil {
@@ -87,7 +78,11 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 
 	// Build the Admin API router.
 	router := setupRouter(tel)
-	operations.SetupHandlers(router, health.Descriptors())
+	operations.SetupHandlers(router, health.Descriptors(health.Dependencies{
+		PGPool:      pgPool,
+		Neo4jDriver: neo4jDriver,
+		OpenAI:      cfg.OpenAI,
+	}))
 
 	// Build the Admin API HTTP server.
 	adminServer := CreateHTTPServer(router, cfg)
