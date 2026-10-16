@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-16
+
+### Changed
+
+- `database.postgres.max_open_conns` and `database.postgres.max_idle_conns` are loaded as 32-bit integers, the type the PostgreSQL pool takes. A value above 2147483647 now fails config loading with an error. It used to be silently capped at that limit.
+
 ## [0.4.1] - 2026-10-16
 
 ### Changed
