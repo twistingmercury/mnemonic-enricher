@@ -54,8 +54,8 @@ type PostgresConfig struct {
 	Username        string        `mapstructure:"username"`
 	Password        string        `mapstructure:"password"` // #nosec G117 -- credentials loaded from config/env, not serialized
 	SSLMode         string        `mapstructure:"ssl_mode"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+	MaxOpenConns    int32         `mapstructure:"max_open_conns"`
+	MaxIdleConns    int32         `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
 
