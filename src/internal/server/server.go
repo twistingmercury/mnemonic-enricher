@@ -101,7 +101,7 @@ func ListenAndServe(cfg *config.MnemonicConfig) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return runHTTPServer(gCtx, adminServer, cfg, logger, "admin_api")
+		return runHTTPServer(gCtx, adminServer, cfg, logger)
 	})
 
 	g.Go(func() error {
@@ -201,13 +201,13 @@ func wireDependencies(
 
 // runHTTPServer starts the admin API HTTP server and gracefully shuts it down
 // when the context is cancelled.
-func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicConfig, logger zerolog.Logger, name string) error {
+func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicConfig, logger zerolog.Logger) error {
 	errCh := make(chan error, 1)
 
 	go func() {
 		logger.Info().
 			Str("addr", srv.Addr).
-			Str("component", name).
+			Str("component", "admin_api").
 			Msg("HTTP server listening")
 
 		var err error
@@ -217,7 +217,7 @@ func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicCo
 			err = srv.ListenAndServe()
 		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("%s server error: %w", name, err)
+			errCh <- fmt.Errorf("admin_api server error: %w", err)
 		}
 		close(errCh)
 	}()
@@ -231,9 +231,9 @@ func runHTTPServer(ctx context.Context, srv *http.Server, cfg *config.MnemonicCo
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
-	logger.Info().Str("component", name).Msg("shutting down HTTP server")
+	logger.Info().Str("component", "admin_api").Msg("shutting down HTTP server")
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("%s shutdown error: %w", name, err)
+		return fmt.Errorf("admin_api shutdown error: %w", err)
 	}
 	return nil
 }
