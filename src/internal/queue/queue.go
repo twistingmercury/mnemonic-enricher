@@ -32,7 +32,7 @@ type Subscriber interface {
 	// Subscribe returns a read-only channel of Delivery messages. The channel
 	// is closed when ctx is cancelled. Reconnect logic is handled internally by
 	// the implementation; callers need not manage connection lifecycle.
-	Subscribe(ctx context.Context) (<-chan Delivery, error)
+	Subscribe(ctx context.Context) <-chan Delivery
 
 	// Name returns a human-readable description of the subscription, typically
 	// the queue name, suitable for logging and metrics labels.

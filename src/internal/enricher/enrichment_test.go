@@ -114,7 +114,7 @@ type mockSubscriber struct {
 	closed     bool
 }
 
-func (s *mockSubscriber) Subscribe(ctx context.Context) (<-chan queue.Delivery, error) {
+func (s *mockSubscriber) Subscribe(ctx context.Context) <-chan queue.Delivery {
 	out := make(chan queue.Delivery)
 	go func() {
 		defer close(out)
@@ -137,7 +137,7 @@ func (s *mockSubscriber) Subscribe(ctx context.Context) (<-chan queue.Delivery, 
 			}
 		}
 	}()
-	return out, nil
+	return out
 }
 
 func (s *mockSubscriber) Name() string { return s.name }

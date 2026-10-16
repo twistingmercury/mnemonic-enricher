@@ -191,17 +191,7 @@ func wireDependencies(
 	// Queue subscriber.
 	switch cfg.Queue.Provider {
 	case "rabbitmq":
-		rmqCfg := rabbitmq.RabbitMQConfig{
-			Host:           cfg.Queue.RabbitMQ.Host,
-			Port:           cfg.Queue.RabbitMQ.Port,
-			User:           cfg.Queue.RabbitMQ.User,
-			Password:       cfg.Queue.RabbitMQ.Password,
-			VHost:          cfg.Queue.RabbitMQ.VHost,
-			Queue:          cfg.Queue.RabbitMQ.Queue,
-			PrefetchCount:  cfg.Queue.RabbitMQ.PrefetchCount,
-			ReconnectDelay: cfg.Queue.RabbitMQ.ReconnectDelay,
-		}
-		rmqSub, subErr := rabbitmq.NewSubscriber(rmqCfg)
+		rmqSub, subErr := rabbitmq.NewSubscriber(cfg.Queue.RabbitMQ)
 		if subErr != nil {
 			return nil, fmt.Errorf("wire queue subscriber: %w", subErr)
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -99,10 +98,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	// semaphore limits the number of concurrently executing delivery handlers.
 	semaphore := make(chan struct{}, w.cfg.WorkerCount)
 
-	deliveries, err := w.sub.Subscribe(ctx)
-	if err != nil {
-		return fmt.Errorf("enrichment worker: subscribe: %w", err)
-	}
+	deliveries := w.sub.Subscribe(ctx)
 
 	allDone.Add(1)
 	go func() {
