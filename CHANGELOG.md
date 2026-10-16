@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-16
+
 ### Changed
 
 - The service reports its own name, `mnemonic-enricher`, as the OpenTelemetry `service.name`, the `/health` `name`, the `/version` `service` and the HTTP tracing middleware name. All three services used to report `mnemonic`, so their traces and metrics could not be told apart.
@@ -136,7 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent routing logic and policy engine
 - Pattern search REST endpoints
 
-[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/twistingmercury/mnemonic-enricher/compare/v0.3.0...v0.3.1

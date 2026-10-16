@@ -1,7 +1,7 @@
 # mnemonic-enricher
 
 > **Maturity Level**: Emerging - Prototype, not production-ready, expect breaking changes
-> **Version**: v0.4.0
+> **Version**: v0.4.1
 >
 > - **Emerging**: Prototype, not production-ready, expect breaking changes
 > - **Basic**: Production-ready but actively evolving, expect minor version changes
