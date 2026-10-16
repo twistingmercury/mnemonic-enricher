@@ -29,7 +29,7 @@ func createTestConfig() *config.MnemonicConfig {
 				Username:        "mnemonic",
 				SSLMode:         "disable",
 				MaxOpenConns:    25,
-				MaxIdleConns:    5,
+				MinConns:        5,
 				ConnMaxLifetime: 5 * time.Minute,
 			},
 			Neo4j: config.Neo4jConfig{
