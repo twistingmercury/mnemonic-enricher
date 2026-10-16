@@ -29,6 +29,7 @@ import (
 	enrichmentsvc "github.com/twistingmercury/mnemonic-enricher/internal/service/enrichment"
 	openaisvc "github.com/twistingmercury/mnemonic-enricher/internal/service/openai"
 	"github.com/twistingmercury/mnemonic-enricher/internal/telemetry"
+	"github.com/twistingmercury/mnemonic-enricher/internal/version"
 	otelxgin "github.com/twistingmercury/otelx/middleware/gin/v2"
 )
 
@@ -269,7 +270,7 @@ func setupRouter(tel *telemetry.Telemetry, requestMetrics *middleware.RequestMet
 	skipPaths := middleware.DefaultSkipPaths
 
 	// Tracing middleware using otelgin
-	router.Use(middleware.TracingMiddlewareWithSkipPaths("mnemonic", skipPaths))
+	router.Use(middleware.TracingMiddlewareWithSkipPaths(version.Service, skipPaths))
 
 	// otelx logging middleware with trace correlation
 	router.Use(otelxgin.LoggingMiddleware(tel.Otelx(),

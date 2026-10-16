@@ -12,7 +12,7 @@ import (
 // to the gin.Engine that is passed in. The deps slice is used to register
 // real dependency health checks with the heartbeat handler.
 func SetupHandlers(r *gin.Engine, deps []heartbeat.DependencyDescriptor) {
-	r.GET("/health", gin.WrapH(heartbeat.Handler("mnemonic", deps...)))
+	r.GET("/health", gin.WrapH(heartbeat.Handler(version.Service, deps...)))
 	r.GET("/version", GetVersion)
 }
 
@@ -26,7 +26,7 @@ func SetupHandlers(r *gin.Engine, deps []heartbeat.DependencyDescriptor) {
 // @Router       /version [get]
 func GetVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"service":    "mnemonic",
+		"service":    version.Service,
 		"version":    version.Version(),
 		"build_date": version.BuildDate(),
 		"commit":     version.Commit(),

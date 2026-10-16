@@ -2,6 +2,10 @@ package version
 
 import "fmt"
 
+// Service is the name this service reports in /health, /version and its
+// telemetry, so traces and metrics from each service can be told apart.
+const Service = "mnemonic-enricher"
+
 var (
 	version   = "n/a"
 	buildDate = "n/a"

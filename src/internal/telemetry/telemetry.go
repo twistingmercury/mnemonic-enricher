@@ -66,7 +66,7 @@ func buildConfig(ctx context.Context, cfg *config.MnemonicConfig) (otelx.Config,
 	}
 
 	otelCfg := otelx.Config{
-		ServiceName:    "mnemonic",
+		ServiceName:    version.Service,
 		ServiceVersion: version.Version(),
 		Environment:    getEnvironment(),
 		LogLevel:       cfg.Logging.Level,
